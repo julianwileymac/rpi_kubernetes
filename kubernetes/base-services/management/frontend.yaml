@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: management-ui
+  namespace: management
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: management-ui
+  template:
+    metadata:
+      labels:
+        app: management-ui
+    spec:
+      containers:
+        - name: ui
+          image: rpi-k8s-control-panel:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: API_URL
+              value: "http://management-api.management.svc.cluster.local:8080"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node.kubernetes.io/role
+                    operator: In
+                    values:
+                      - control-plane
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: management-ui
+  namespace: management
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app: management-ui
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: management-ui-external
+  namespace: management
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app: management-ui
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: management-ui
+  namespace: management
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: control.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: management-ui
+                port:
+                  number: 80
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: management-api
+                port:
+                  number: 8080

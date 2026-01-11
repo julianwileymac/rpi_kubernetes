@@ -1,0 +1,54 @@
+# =============================================================================
+# Kubernetes Namespaces
+# =============================================================================
+# Namespace definitions for organizing cluster resources.
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-services
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: storage-and-databases
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-platform
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: machine-learning
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: monitoring-and-tracing
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: development
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: development-tools
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: ingress-controllers
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: management
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: cluster-management

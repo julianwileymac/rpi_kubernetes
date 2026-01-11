@@ -1,0 +1,170 @@
+# =============================================================================
+# kube-prometheus-stack Helm Values
+# =============================================================================
+# Install with:
+#   helm install prometheus prometheus-community/kube-prometheus-stack \
+#     --namespace observability --create-namespace -f values.yaml
+# =============================================================================
+
+# Global settings
+fullnameOverride: prometheus
+
+# Grafana configuration
+grafana:
+  enabled: true
+  adminPassword: "admin123"
+  
+  service:
+    type: LoadBalancer
+    port: 3000
+  
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - grafana.local
+  
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 5Gi
+  
+  # Default dashboards
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+  
+  dashboards:
+    default:
+      k3s-cluster:
+        gnetId: 15757
+        revision: 1
+        datasource: Prometheus
+      node-exporter:
+        gnetId: 1860
+        revision: 27
+        datasource: Prometheus
+      minio:
+        gnetId: 13502
+        revision: 2
+        datasource: Prometheus
+  
+  # Additional data sources
+  additionalDataSources:
+    - name: Jaeger
+      type: jaeger
+      url: http://jaeger-query.observability:16686
+      access: proxy
+      isDefault: false
+
+# Prometheus configuration
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    retentionSize: 15GB
+    
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+    
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+    
+    # Allow discovering ServiceMonitors in all namespaces
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    
+    # Additional scrape configs for MinIO
+    additionalScrapeConfigs:
+      - job_name: minio
+        metrics_path: /minio/v2/metrics/cluster
+        scheme: http
+        static_configs:
+          - targets:
+              - minio.data-services:9000
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - prometheus.local
+
+# AlertManager
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+  
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - alertmanager.local
+
+# Node Exporter (deployed on all nodes)
+nodeExporter:
+  enabled: true
+  
+  # Tolerations to run on all nodes including control plane
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+# Kube-state-metrics
+kubeStateMetrics:
+  enabled: true
+
+# Default rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: true
+    general: true
+    k8s: true
+    kubeApiserver: true
+    kubePrometheusGeneral: true
+    kubePrometheusNodeAlerting: true
+    kubeScheduler: true
+    kubeStateMetrics: true
+    kubelet: true
+    network: true
+    node: true
+    prometheus: true
+
+# Disable components not needed for k3s
+kubeEtcd:
+  enabled: false  # k3s uses embedded etcd differently
+
+kubeControllerManager:
+  enabled: false  # Not exposed in k3s by default
+
+kubeScheduler:
+  enabled: false  # Not exposed in k3s by default

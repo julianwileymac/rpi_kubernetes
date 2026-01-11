@@ -1,0 +1,315 @@
+---
+# =============================================================================
+# k3s Installation Playbook
+# =============================================================================
+# Installs k3s on all cluster nodes.
+#
+# Usage:
+#   ansible-playbook -i inventory/cluster.yml playbooks/k3s-install.yml
+#
+# Prerequisites:
+#   - Run bootstrap.yml first
+#   - All nodes should be rebooted after bootstrap
+#
+# Tags:
+#   - server:   Install k3s server (control plane)
+#   - agent:    Install k3s agents (workers)
+#   - helm:     Install Helm charts (ingress, metallb)
+#   - verify:   Verify cluster health
+# =============================================================================
+
+- name: Install k3s Server on Control Plane
+  hosts: control_plane
+  become: true
+  gather_facts: true
+  tags: [server]
+
+  vars:
+    k3s_server_args: >-
+      --disable=traefik
+      --disable=local-storage
+      --flannel-backend=vxlan
+      --write-kubeconfig-mode=644
+      --tls-san={{ node_ip }}
+      --tls-san={{ inventory_hostname }}
+      --tls-san={{ inventory_hostname }}.{{ cluster_domain | default('local') }}
+
+  tasks:
+    - name: Check if k3s is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Download and install k3s server
+      ansible.builtin.shell: |
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_VERSION="{{ k3s_version }}" \
+          sh -s - server {{ k3s_server_args }}
+      when: not k3s_binary.stat.exists
+      register: k3s_install
+      changed_when: k3s_install.rc == 0
+
+    - name: Wait for k3s server to be ready
+      ansible.builtin.wait_for:
+        path: /var/lib/rancher/k3s/server/node-token
+        state: present
+        timeout: 300
+
+    - name: Read k3s node token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_token_raw
+
+    - name: Set k3s token fact
+      ansible.builtin.set_fact:
+        k3s_node_token: "{{ k3s_token_raw.content | b64decode | trim }}"
+
+    - name: Wait for k3s API to be available
+      ansible.builtin.command: kubectl get nodes
+      register: kubectl_result
+      until: kubectl_result.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: Get kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: kubeconfig_raw
+
+    - name: Save kubeconfig locally
+      ansible.builtin.copy:
+        content: "{{ kubeconfig_raw.content | b64decode | replace('127.0.0.1', node_ip) }}"
+        dest: "/tmp/k3s-kubeconfig-{{ cluster_name | default('rpi-k8s') }}.yaml"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+
+    - name: Display cluster access info
+      ansible.builtin.debug:
+        msg: |
+          k3s Server installed successfully!
+          
+          Node Token: {{ k3s_node_token }}
+          
+          To access the cluster from your workstation:
+            export KUBECONFIG=/tmp/k3s-kubeconfig-{{ cluster_name | default('rpi-k8s') }}.yaml
+            kubectl get nodes
+
+# =============================================================================
+# Install k3s Agent on Worker Nodes
+# =============================================================================
+
+- name: Install k3s Agent on Workers
+  hosts: workers
+  become: true
+  gather_facts: true
+  serial: 1  # Install one at a time to avoid overwhelming control plane
+  tags: [agent]
+
+  vars:
+    k3s_agent_args: >-
+      --node-label=kubernetes.io/arch={{ node_arch | default('arm64') }}
+      --node-label=hardware/type=raspberry-pi
+
+  tasks:
+    - name: Get token from control plane
+      ansible.builtin.set_fact:
+        k3s_token: "{{ hostvars[groups['control_plane'][0]]['k3s_node_token'] }}"
+        k3s_server_url: "https://{{ hostvars[groups['control_plane'][0]]['node_ip'] }}:6443"
+
+    - name: Check if k3s agent is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Download and install k3s agent
+      ansible.builtin.shell: |
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_VERSION="{{ k3s_version }}" \
+          K3S_URL="{{ k3s_server_url }}" \
+          K3S_TOKEN="{{ k3s_token }}" \
+          sh -s - agent {{ k3s_agent_args }}
+      when: not k3s_binary.stat.exists
+      register: k3s_agent_install
+      changed_when: k3s_agent_install.rc == 0
+
+    - name: Wait for k3s agent to start
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: started
+        enabled: true
+
+    - name: Wait for node to join cluster
+      ansible.builtin.shell: |
+        kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get node {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      register: node_status
+      until: node_status.stdout == "True"
+      retries: 30
+      delay: 10
+      changed_when: false
+
+# =============================================================================
+# Install Essential Helm Charts
+# =============================================================================
+
+- name: Install Essential Components
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  tags: [helm]
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  tasks:
+    - name: Add Helm repositories
+      kubernetes.core.helm_repository:
+        name: "{{ item.name }}"
+        repo_url: "{{ item.url }}"
+      loop:
+        - { name: ingress-nginx, url: "https://kubernetes.github.io/ingress-nginx" }
+        - { name: metallb, url: "https://metallb.github.io/metallb" }
+        - { name: jetstack, url: "https://charts.jetstack.io" }
+      become: false
+      delegate_to: localhost
+
+    - name: Install MetalLB
+      kubernetes.core.helm:
+        name: metallb
+        chart_ref: metallb/metallb
+        release_namespace: metallb-system
+        create_namespace: true
+        wait: true
+        values:
+          speaker:
+            tolerations:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+                effect: NoSchedule
+      become: false
+      delegate_to: localhost
+
+    - name: Wait for MetalLB controller
+      ansible.builtin.command: >
+        kubectl wait --for=condition=available --timeout=300s
+        deployment/metallb-controller -n metallb-system
+      changed_when: false
+
+    - name: Configure MetalLB IP pool
+      ansible.builtin.shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: metallb.io/v1beta1
+        kind: IPAddressPool
+        metadata:
+          name: default-pool
+          namespace: metallb-system
+        spec:
+          addresses:
+            - {{ metallb_pool | default('192.168.1.200-192.168.1.250') }}
+        ---
+        apiVersion: metallb.io/v1beta1
+        kind: L2Advertisement
+        metadata:
+          name: default
+          namespace: metallb-system
+        spec:
+          ipAddressPools:
+            - default-pool
+        EOF
+      changed_when: true
+
+    - name: Install ingress-nginx
+      kubernetes.core.helm:
+        name: ingress-nginx
+        chart_ref: ingress-nginx/ingress-nginx
+        release_namespace: ingress
+        create_namespace: true
+        wait: true
+        values:
+          controller:
+            service:
+              type: LoadBalancer
+            tolerations:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+                effect: NoSchedule
+            nodeSelector:
+              kubernetes.io/arch: amd64
+      become: false
+      delegate_to: localhost
+      failed_when: false  # May fail on ARM-only clusters
+
+    - name: Install cert-manager
+      kubernetes.core.helm:
+        name: cert-manager
+        chart_ref: jetstack/cert-manager
+        release_namespace: cert-manager
+        create_namespace: true
+        wait: true
+        values:
+          installCRDs: true
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+      become: false
+      delegate_to: localhost
+
+# =============================================================================
+# Verify Cluster Health
+# =============================================================================
+
+- name: Verify Cluster Health
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  tags: [verify]
+
+  tasks:
+    - name: Get cluster nodes
+      ansible.builtin.command: kubectl get nodes -o wide
+      register: nodes_output
+      changed_when: false
+
+    - name: Display cluster nodes
+      ansible.builtin.debug:
+        msg: "{{ nodes_output.stdout_lines }}"
+
+    - name: Get all pods
+      ansible.builtin.command: kubectl get pods -A
+      register: pods_output
+      changed_when: false
+
+    - name: Display all pods
+      ansible.builtin.debug:
+        msg: "{{ pods_output.stdout_lines }}"
+
+    - name: Get cluster info
+      ansible.builtin.command: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+
+    - name: Display cluster info
+      ansible.builtin.debug:
+        msg: "{{ cluster_info.stdout_lines }}"
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          Cluster Installation Complete!
+          ============================================
+          
+          Control Plane: {{ node_ip }}
+          Workers: {{ groups['workers'] | length }}
+          
+          Kubeconfig saved to: /tmp/k3s-kubeconfig-{{ cluster_name | default('rpi-k8s') }}.yaml
+          
+          Next steps:
+            1. Copy kubeconfig to your workstation
+            2. Deploy base services: kubectl apply -k kubernetes/
+            3. Access services via MetalLB IPs
+          
+          ============================================

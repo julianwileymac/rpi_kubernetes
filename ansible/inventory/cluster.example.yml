@@ -1,0 +1,101 @@
+# =============================================================================
+# Ansible Inventory - RPi Kubernetes Cluster
+# =============================================================================
+# Copy this file to cluster.yml and customize with your node details.
+# Do NOT commit cluster.yml to version control (contains sensitive IPs).
+# =============================================================================
+
+all:
+  vars:
+    # SSH Configuration
+    ansible_user: pi
+    ansible_ssh_private_key_file: ~/.ssh/id_rsa
+    ansible_python_interpreter: /usr/bin/python3
+    
+    # k3s Configuration
+    k3s_version: "v1.29.0+k3s1"
+    k3s_token: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}"
+    
+    # Cluster Configuration
+    cluster_name: rpi-k8s-cluster
+    cluster_domain: local
+    
+    # Storage Configuration
+    external_storage_mount: /mnt/storage
+    
+    # Network Configuration
+    pod_cidr: "10.42.0.0/16"
+    service_cidr: "10.43.0.0/16"
+
+  children:
+    # ==========================================================================
+    # Control Plane Nodes
+    # ==========================================================================
+    control_plane:
+      hosts:
+        k8s-control:
+          ansible_host: 192.168.1.100
+          ansible_user: ubuntu
+          node_ip: 192.168.1.100
+          node_arch: amd64
+          # GPU support
+          gpu_enabled: true
+          # MetalLB IP pool
+          metallb_pool: "192.168.1.200-192.168.1.250"
+          # k3s server specific args
+          k3s_server_args:
+            - "--disable=traefik"
+            - "--disable=local-storage"
+            - "--flannel-backend=vxlan"
+            - "--write-kubeconfig-mode=644"
+            - "--tls-san=192.168.1.100"
+            - "--tls-san=k8s-control"
+            - "--tls-san=k8s-control.local"
+
+    # ==========================================================================
+    # Worker Nodes (Raspberry Pi 5)
+    # ==========================================================================
+    workers:
+      vars:
+        ansible_user: pi
+        node_arch: arm64
+        # External USB SSD device
+        external_storage_device: /dev/sda
+        # k3s agent specific args
+        k3s_agent_args:
+          - "--node-label=kubernetes.io/arch=arm64"
+          - "--node-label=hardware/type=raspberry-pi"
+          - "--node-label=hardware/model=rpi5"
+
+      hosts:
+        rpi5-node-1:
+          ansible_host: 192.168.1.101
+          node_ip: 192.168.1.101
+          node_labels:
+            - "topology.kubernetes.io/zone=rack-1"
+
+        rpi5-node-2:
+          ansible_host: 192.168.1.102
+          node_ip: 192.168.1.102
+          node_labels:
+            - "topology.kubernetes.io/zone=rack-1"
+
+        rpi5-node-3:
+          ansible_host: 192.168.1.103
+          node_ip: 192.168.1.103
+          node_labels:
+            - "topology.kubernetes.io/zone=rack-1"
+
+        rpi5-node-4:
+          ansible_host: 192.168.1.104
+          node_ip: 192.168.1.104
+          node_labels:
+            - "topology.kubernetes.io/zone=rack-1"
+
+    # ==========================================================================
+    # All Kubernetes Nodes
+    # ==========================================================================
+    k3s_cluster:
+      children:
+        control_plane:
+        workers:

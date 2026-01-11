@@ -1,0 +1,49 @@
+# =============================================================================
+# Kustomization - Root
+# =============================================================================
+# Main kustomization file for deploying all cluster resources.
+# Usage: kubectl apply -k kubernetes/
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: rpi-k8s-cluster
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/managed-by: rpi-k8s-cluster
+  app.kubernetes.io/part-of: rpi-k8s-platform
+
+# Resources to include
+resources:
+  # Namespaces first
+  - namespaces/namespaces.yaml
+  
+  # Base services
+  - base-services/minio/
+  - base-services/postgresql/
+  - base-services/mlflow/
+  - base-services/jupyterhub/
+  - base-services/dask-ray/
+  - base-services/management/
+  
+  # Observability stack
+  - observability/otel-collector/
+  - observability/jaeger/
+  
+  # Note: Prometheus/Grafana deployed via Helm separately
+  # See base-services/prometheus/README.md
+
+# ConfigMap generators (if needed)
+# configMapGenerator:
+#   - name: cluster-config
+#     literals:
+#       - CLUSTER_NAME=rpi-k8s-cluster
+
+# Secret generators (if needed)
+# secretGenerator:
+#   - name: cluster-secrets
+#     literals:
+#       - SECRET_KEY=changeme

@@ -1,0 +1,109 @@
+# =============================================================================
+# Control Plane Node Configuration (Ubuntu Desktop)
+# =============================================================================
+# Configuration for the Ubuntu desktop serving as the hybrid control plane.
+# This node runs k3s server and can also handle heavy workloads (ML/GPU).
+# =============================================================================
+
+# Node Identity
+node:
+  hostname: k8s-control
+  role: control-plane
+  # Set to your Ubuntu desktop's IP
+  ip_address: 192.168.1.100
+  # Architecture
+  arch: amd64
+  # Labels for workload scheduling
+  labels:
+    node.kubernetes.io/role: control-plane
+    hardware/type: desktop
+    hardware/gpu: "true"
+    workload/ml: "true"
+  # Taints (optional - remove if you want regular workloads here)
+  taints: []
+  # taints:
+  #   - key: node-role.kubernetes.io/control-plane
+  #     effect: NoSchedule
+
+# k3s Server Configuration
+k3s:
+  # Additional server-specific arguments
+  server_args:
+    - --write-kubeconfig-mode=644
+    - --tls-san={{ node.ip_address }}
+    - --tls-san={{ node.hostname }}
+    - --tls-san={{ node.hostname }}.{{ cluster.domain }}
+    # Enable embedded etcd for HA readiness
+    # - --cluster-init
+  # Token for worker nodes to join (auto-generated if not set)
+  # token: your-secure-token-here
+
+# System Configuration
+system:
+  # Ubuntu-specific packages to install
+  packages:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - gnupg
+    - lsb-release
+    - nfs-common
+    - open-iscsi
+    - jq
+    - htop
+    - iotop
+    - net-tools
+
+# GPU Configuration (NVIDIA)
+gpu:
+  enabled: true
+  # NVIDIA driver version (auto-detect if empty)
+  driver_version: ""
+  # NVIDIA container toolkit
+  container_toolkit: true
+  # Runtime class for GPU workloads
+  runtime_class: nvidia
+
+# Storage Configuration
+storage:
+  # External storage device (leave empty if using internal storage)
+  device: ""
+  # Mount point
+  mount_point: /mnt/storage
+  # Directories to create under mount point
+  directories:
+    - data
+    - mlruns
+    - postgresql
+    - minio
+    - jupyterhub
+
+# Network Configuration
+network:
+  # Interface name (auto-detect if empty)
+  interface: ""
+  # Static IP configuration
+  static_ip:
+    enabled: true
+    address: 192.168.1.100/24
+    gateway: 192.168.1.1
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+# MetalLB Configuration (bare-metal load balancer)
+metallb:
+  enabled: true
+  # IP range for LoadBalancer services
+  address_pool: 192.168.1.200-192.168.1.250
+
+# Resource Limits for Control Plane Components
+resources:
+  # Reserve resources for system
+  system_reserved:
+    cpu: 500m
+    memory: 1Gi
+  # Reserve resources for k8s components
+  kube_reserved:
+    cpu: 500m
+    memory: 1Gi

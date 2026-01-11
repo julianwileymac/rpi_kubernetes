@@ -1,0 +1,150 @@
+# =============================================================================
+# Raspberry Pi 5 Worker Node Configuration
+# =============================================================================
+# Configuration template for RPi5 worker nodes.
+# Copy this file for each node and customize the node-specific values.
+# =============================================================================
+
+# Node Identity (customize per node)
+node:
+  # Hostname pattern: rpi5-node-{1,2,3,4}
+  hostname: rpi5-node-1
+  role: worker
+  # Set to the node's static IP
+  ip_address: 192.168.1.101
+  # Architecture
+  arch: arm64
+  # Labels for workload scheduling
+  labels:
+    node.kubernetes.io/role: worker
+    hardware/type: raspberry-pi
+    hardware/model: rpi5
+    hardware/memory: 8Gi
+  # Taints (optional)
+  taints: []
+
+# k3s Agent Configuration
+k3s:
+  # Control plane server URL
+  server_url: https://192.168.1.100:6443
+  # Token from control plane (retrieved during setup)
+  # token: K10...
+  # Additional agent-specific arguments
+  agent_args:
+    - --node-label=kubernetes.io/arch=arm64
+
+# System Configuration
+system:
+  # Raspberry Pi OS packages to install
+  packages:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - nfs-common
+    - open-iscsi
+    - libraspberrypi-bin
+    - linux-modules-extra-raspi
+  # Enable 64-bit kernel
+  kernel_64bit: true
+  # cgroups configuration
+  cgroups:
+    memory: true
+    cpuset: true
+
+# Hardware Configuration
+hardware:
+  # Disable swap for Kubernetes
+  swap_disabled: true
+  # CPU governor (performance for consistent behavior)
+  cpu_governor: performance
+  # GPU memory allocation (minimum for headless)
+  gpu_mem: 16
+  # Enable hardware watchdog
+  watchdog: true
+  # Over-temperature throttling threshold (Celsius)
+  temp_limit: 85
+
+# Storage Configuration
+storage:
+  # Boot device (SD card)
+  boot_device: /dev/mmcblk0
+  # External storage device (USB SSD)
+  external_device: /dev/sda
+  # Mount point for external storage
+  mount_point: /mnt/storage
+  # Partition and format if not already done
+  auto_partition: true
+  # Directories to create
+  directories:
+    - containers
+    - volumes
+    - logs
+
+# Network Configuration
+network:
+  # Interface name (eth0 for wired)
+  interface: eth0
+  # Static IP configuration
+  static_ip:
+    enabled: true
+    address: 192.168.1.101/24
+    gateway: 192.168.1.1
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+# Power Management
+power:
+  # Disable WiFi to save power (using ethernet)
+  wifi_disabled: true
+  # Disable Bluetooth to save power
+  bluetooth_disabled: true
+  # Enable USB power management
+  usb_power_management: false
+
+# Monitoring
+monitoring:
+  # Enable temperature monitoring
+  temperature: true
+  # Enable throttling detection
+  throttle_detection: true
+  # Metrics export port
+  metrics_port: 9100
+
+# Resource Limits
+resources:
+  # Reserve resources for system processes
+  system_reserved:
+    cpu: 200m
+    memory: 256Mi
+  # Maximum pods (limited by IP allocation)
+  max_pods: 60
+
+# =============================================================================
+# Node Variants (copy and modify for each node)
+# =============================================================================
+# 
+# Node 2:
+#   node:
+#     hostname: rpi5-node-2
+#     ip_address: 192.168.1.102
+#   network:
+#     static_ip:
+#       address: 192.168.1.102/24
+#
+# Node 3:
+#   node:
+#     hostname: rpi5-node-3
+#     ip_address: 192.168.1.103
+#   network:
+#     static_ip:
+#       address: 192.168.1.103/24
+#
+# Node 4:
+#   node:
+#     hostname: rpi5-node-4
+#     ip_address: 192.168.1.104
+#   network:
+#     static_ip:
+#       address: 192.168.1.104/24
+# =============================================================================

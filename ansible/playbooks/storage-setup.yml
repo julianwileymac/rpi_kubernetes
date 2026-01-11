@@ -1,0 +1,207 @@
+---
+# =============================================================================
+# External Storage Setup Playbook
+# =============================================================================
+# Configures external USB SSDs on worker nodes.
+#
+# Usage:
+#   ansible-playbook -i inventory/cluster.yml playbooks/storage-setup.yml
+#
+# Variables (set in inventory):
+#   external_storage_device: /dev/sda (the USB SSD device)
+#   external_storage_mount: /mnt/storage (mount point)
+# =============================================================================
+
+- name: Setup External Storage on Workers
+  hosts: workers
+  become: true
+  gather_facts: true
+
+  vars:
+    storage_device: "{{ external_storage_device | default('/dev/sda') }}"
+    storage_mount: "{{ external_storage_mount | default('/mnt/storage') }}"
+    storage_fs: ext4
+
+  tasks:
+    - name: Check if storage device exists
+      ansible.builtin.stat:
+        path: "{{ storage_device }}"
+      register: device_check
+
+    - name: Fail if storage device not found
+      ansible.builtin.fail:
+        msg: "Storage device {{ storage_device }} not found. Skipping storage setup."
+      when: not device_check.stat.exists
+      ignore_errors: true
+
+    - name: Get device info
+      ansible.builtin.command: lsblk -no TYPE {{ storage_device }}
+      register: device_type
+      changed_when: false
+      when: device_check.stat.exists
+
+    - name: Check for existing partitions
+      ansible.builtin.command: lsblk -no NAME {{ storage_device }}
+      register: partitions
+      changed_when: false
+      when: device_check.stat.exists
+
+    - name: Create GPT partition table
+      ansible.builtin.command: parted -s {{ storage_device }} mklabel gpt
+      when:
+        - device_check.stat.exists
+        - partitions.stdout_lines | length == 1
+
+    - name: Create partition
+      ansible.builtin.command: parted -s {{ storage_device }} mkpart primary ext4 0% 100%
+      when:
+        - device_check.stat.exists
+        - partitions.stdout_lines | length == 1
+
+    - name: Wait for partition to be available
+      ansible.builtin.wait_for:
+        path: "{{ storage_device }}1"
+        state: present
+        timeout: 30
+      when: device_check.stat.exists
+
+    - name: Check if partition is formatted
+      ansible.builtin.command: blkid -s TYPE -o value {{ storage_device }}1
+      register: partition_type
+      changed_when: false
+      failed_when: false
+      when: device_check.stat.exists
+
+    - name: Format partition as ext4
+      ansible.builtin.filesystem:
+        fstype: "{{ storage_fs }}"
+        dev: "{{ storage_device }}1"
+      when:
+        - device_check.stat.exists
+        - partition_type.stdout != storage_fs
+
+    - name: Create mount point
+      ansible.builtin.file:
+        path: "{{ storage_mount }}"
+        state: directory
+        mode: '0755'
+
+    - name: Get partition UUID
+      ansible.builtin.command: blkid -s UUID -o value {{ storage_device }}1
+      register: partition_uuid
+      changed_when: false
+      when: device_check.stat.exists
+
+    - name: Add to fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "UUID={{ partition_uuid.stdout }} {{ storage_mount }} {{ storage_fs }} defaults,noatime,nodiratime 0 2"
+        state: present
+      when:
+        - device_check.stat.exists
+        - partition_uuid.stdout is defined
+
+    - name: Mount storage
+      ansible.posix.mount:
+        path: "{{ storage_mount }}"
+        src: "UUID={{ partition_uuid.stdout }}"
+        fstype: "{{ storage_fs }}"
+        opts: defaults,noatime,nodiratime
+        state: mounted
+      when:
+        - device_check.stat.exists
+        - partition_uuid.stdout is defined
+
+    - name: Create storage subdirectories
+      ansible.builtin.file:
+        path: "{{ storage_mount }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - containers
+        - volumes
+        - logs
+        - k3s
+
+    - name: Configure k3s to use external storage
+      ansible.builtin.lineinfile:
+        path: /etc/rancher/k3s/config.yaml
+        line: "data-dir: {{ storage_mount }}/k3s"
+        create: true
+        mode: '0644'
+      notify: Restart k3s-agent
+
+    - name: Display storage info
+      ansible.builtin.command: df -h {{ storage_mount }}
+      register: storage_info
+      changed_when: false
+
+    - name: Show storage configuration
+      ansible.builtin.debug:
+        msg: |
+          Storage configured on {{ inventory_hostname }}:
+          Device: {{ storage_device }}1
+          Mount: {{ storage_mount }}
+          {{ storage_info.stdout }}
+
+  handlers:
+    - name: Restart k3s-agent
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: restarted
+      failed_when: false
+
+# =============================================================================
+# Setup Local Path Provisioner
+# =============================================================================
+
+- name: Install Local Path Provisioner
+  hosts: control_plane
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Create local-path-provisioner namespace
+      ansible.builtin.command: kubectl create namespace local-path-storage --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: true
+
+    - name: Install local-path-provisioner
+      ansible.builtin.shell: |
+        kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.26/deploy/local-path-storage.yaml
+      changed_when: true
+
+    - name: Configure local-path-provisioner for external storage
+      ansible.builtin.shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: local-path-config
+          namespace: local-path-storage
+        data:
+          config.json: |-
+            {
+              "nodePathMap": [
+                {
+                  "node": "DEFAULT_PATH_FOR_NON_LISTED_NODES",
+                  "paths": ["/mnt/storage/volumes"]
+                }
+              ]
+            }
+        EOF
+      changed_when: true
+
+    - name: Set local-path as default storage class
+      ansible.builtin.shell: |
+        kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+      changed_when: true
+      failed_when: false
+
+    - name: Verify storage class
+      ansible.builtin.command: kubectl get storageclass
+      register: sc_output
+      changed_when: false
+
+    - name: Display storage classes
+      ansible.builtin.debug:
+        msg: "{{ sc_output.stdout_lines }}"

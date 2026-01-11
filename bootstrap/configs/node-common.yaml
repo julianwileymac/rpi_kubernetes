@@ -1,0 +1,100 @@
+# =============================================================================
+# Common Node Configuration
+# =============================================================================
+# Shared configuration values for all cluster nodes.
+# Override these in node-specific config files as needed.
+# =============================================================================
+
+# Cluster Configuration
+cluster:
+  name: rpi-k8s-cluster
+  domain: local
+  pod_cidr: 10.42.0.0/16
+  service_cidr: 10.43.0.0/16
+  cluster_dns: 10.43.0.10
+
+# k3s Configuration
+k3s:
+  version: v1.29.0+k3s1
+  channel: stable
+  # Disabled components (we use alternatives)
+  disable:
+    - traefik           # Use ingress-nginx instead
+    - local-storage     # Use longhorn/local-path-provisioner
+  # Additional arguments for all nodes
+  extra_args:
+    - --flannel-backend=vxlan
+    - --kubelet-arg=max-pods=110
+
+# System Configuration
+system:
+  # Timezone
+  timezone: America/New_York
+  # Locale
+  locale: en_US.UTF-8
+  # SSH settings
+  ssh:
+    port: 22
+    password_auth: false
+    permit_root: false
+  # Kernel parameters for k8s
+  sysctl:
+    net.bridge.bridge-nf-call-iptables: 1
+    net.bridge.bridge-nf-call-ip6tables: 1
+    net.ipv4.ip_forward: 1
+    vm.swappiness: 0
+    fs.inotify.max_user_instances: 8192
+    fs.inotify.max_user_watches: 524288
+
+# Storage Configuration
+storage:
+  # Base mount point for external storage
+  mount_point: /mnt/storage
+  # Filesystem type for external drives
+  filesystem: ext4
+  # Mount options
+  mount_options: defaults,noatime,nodiratime
+
+# Network Configuration
+network:
+  # DNS servers
+  dns_servers:
+    - 8.8.8.8
+    - 8.8.4.4
+  # NTP servers
+  ntp_servers:
+    - 0.pool.ntp.org
+    - 1.pool.ntp.org
+
+# Container Runtime
+containerd:
+  # Snapshotter (overlayfs for most systems)
+  snapshotter: overlayfs
+  # Registry mirrors (optional)
+  mirrors: {}
+
+# Monitoring
+monitoring:
+  # Node exporter port
+  node_exporter_port: 9100
+  # Enable hardware metrics collection
+  hardware_metrics: true
+
+# Security
+security:
+  # Fail2ban configuration
+  fail2ban:
+    enabled: true
+    max_retry: 5
+    ban_time: 3600
+  # UFW firewall
+  firewall:
+    enabled: true
+    # Ports to allow
+    allow_ports:
+      - 22/tcp      # SSH
+      - 6443/tcp    # Kubernetes API
+      - 10250/tcp   # Kubelet
+      - 8472/udp    # Flannel VXLAN
+      - 51820/udp   # Flannel Wireguard
+      - 51821/udp   # Flannel Wireguard v6
