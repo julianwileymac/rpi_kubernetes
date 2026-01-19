@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: observability
 
 resources:
+  - pvc.yaml
   - deployment.yaml
   - service.yaml
   - ingress.yaml

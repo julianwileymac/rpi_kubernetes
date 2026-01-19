@@ -27,65 +27,167 @@ A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu de
 ## Features
 
 - **k3s Kubernetes** - Lightweight, production-ready Kubernetes distribution
-- **Base Services** - JupyterHub, MLFlow, MinIO, PostgreSQL, Prometheus, Grafana, Dask/Ray
+- **Base Services** - JupyterHub, MLFlow, MinIO, PostgreSQL, Prometheus, Grafana, Dask/Ray, ChromaDB, Milvus
 - **Management Framework** - Python FastAPI backend + Next.js control panel
 - **OpenTelemetry** - Distributed tracing and observability
 - **Ansible Automation** - Reproducible cluster provisioning
 
 ## Quick Start
 
+> **First Time?** See the [Detailed Raspberry Pi Setup Guide](docs/raspberry-pi-setup.md) for step-by-step instructions on imaging SD cards, first boot configuration, and troubleshooting.
+
 ### Prerequisites
 
-- 4x Raspberry Pi 5 (8GB RAM) with Raspberry Pi OS 64-bit
+**Hardware:**
+- 4x Raspberry Pi 5 (8GB RAM recommended)
 - 1x Ubuntu Desktop (22.04+) for control plane
 - Gigabit Ethernet switch
-- External USB SSDs for persistent storage (recommended)
-- Ansible 2.15+ installed on your workstation
+- External USB SSDs for persistent storage (one per node)
+- MicroSD cards (32GB+ Class 10/A2)
+- Official 27W USB-C power supplies
 
-### 1. Configure Nodes
+**Software (on your workstation):**
+- [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+- SSH client (built-in on Mac/Linux, Windows Terminal on Windows)
+- Ansible 2.15+ (`pip install ansible`)
+- kubectl (`brew install kubectl` or [install guide](https://kubernetes.io/docs/tasks/tools/))
 
-Edit the inventory file with your node IPs:
+### Step 1: Image SD Cards
+
+Use Raspberry Pi Imager to flash **Raspberry Pi OS Lite (64-bit)** to each SD card.
+
+For each node, configure in Imager's advanced settings (gear icon):
+- **Hostname**: `rpi1`, `rpi2`, `rpi3`, `rpi4`
+- **Enable SSH**: Yes (with public key authentication)
+- **Username/Password**: `julian` / your-password
+- **Timezone**: Your timezone
+
+See [docs/raspberry-pi-setup.md](docs/raspberry-pi-setup.md) for detailed imaging instructions.
+
+### Step 2: First Boot & Network Setup
+
+1. Insert SD card, connect USB SSD, Ethernet, then power
+2. Wait 1-2 minutes for boot
+3. Find the IP address via router or `nmap -sn 192.168.1.0/24`
+4. Test SSH: `ssh julian@<ip-address>`
+
+**Recommended Static IPs:**
+
+| Node | Hostname | IP Address |
+|------|----------|------------|
+| Control Plane | k8s-control | 192.168.1.100 |
+| Worker 1 | rpi1 | 192.168.1.101 |
+| Worker 2 | rpi2 | 192.168.1.102 |
+| Worker 3 | rpi3 | 192.168.1.103 |
+| Worker 4 | rpi4 | 192.168.1.104 |
+
+### Step 3: Configure Ansible Inventory
 
 ```bash
+# Clone the repository
+git clone https://github.com/your-repo/rpi_kubernetes.git
+cd rpi_kubernetes
+
+# Copy and edit inventory with your node IPs
 cp ansible/inventory/cluster.example.yml ansible/inventory/cluster.yml
-# Edit cluster.yml with your node details
+nano ansible/inventory/cluster.yml
 ```
 
-### 2. Bootstrap Nodes
+### Step 4: Bootstrap All Nodes
+
+**Windows Users - PowerShell (Recommended):**
+
+```powershell
+# Auto-discover and bootstrap all nodes
+.\bootstrap\scripts\port-to-rpi.ps1 -Discover -RunBootstrap -AuthMethod "password"
+
+# Bootstrap control plane
+.\bootstrap\scripts\bootstrap-cluster.ps1 -ControlPlane "ubuntu@192.168.1.100"
+
+# Verify with diagnostics
+.\bootstrap\scripts\diagnose-cluster.ps1 `
+    -ControlPlane "ubuntu@192.168.1.100" `
+    -Workers @("julian@192.168.1.101","julian@192.168.1.102","julian@192.168.1.103","julian@192.168.1.104")
+```
+
+**Linux/Mac/WSL Users - Ansible:**
 
 ```bash
-# Prepare all nodes (disable swap, enable cgroups, etc.)
+# Prepare all nodes (disable swap, enable cgroups, configure storage)
 ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/bootstrap.yml
 
-# Setup external storage
-ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/storage-setup.yml
+# Nodes will reboot automatically
+# Wait 2-3 minutes, then verify:
+ansible all -i ansible/inventory/cluster.yml -m ping
 ```
 
-### 3. Install k3s Cluster
+The bootstrap process:
+- Disables swap (required by Kubernetes)
+- Enables memory cgroups in kernel
+- Installs required packages
+- Configures external USB storage
+- Sets up firewall rules
+
+### Step 5: Install k3s Cluster
 
 ```bash
+# Install k3s server on control plane and agents on workers
 ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/k3s-install.yml
 ```
 
-### 4. Deploy Base Services
+### Step 6: Configure kubectl
 
 ```bash
 # Get kubeconfig from control plane
-scp ubuntu@<control-plane-ip>:~/.kube/config ~/.kube/config-rpi-cluster
+scp ubuntu@192.168.1.100:~/.kube/config ~/.kube/config-rpi-cluster
 
-# Deploy services
+# Set as default or use with flag
+export KUBECONFIG=~/.kube/config-rpi-cluster
+
+# Verify cluster access
+kubectl get nodes
+```
+
+### Step 7: Deploy Base Services
+
+```bash
+# Deploy all base services via Kustomize
 kubectl apply -k kubernetes/
 ```
 
-### 5. Access Services
+### Step 8: Access Services
+
+Add these entries to your workstation's hosts file (`/etc/hosts` or `C:\Windows\System32\drivers\etc\hosts`):
+
+```
+192.168.1.100  jupyter.local mlflow.local grafana.local minio.local control.local \
+               prometheus.local vm.local loki.local jaeger.local argo.local \
+               chromadb.local milvus.local yatai.local
+```
 
 | Service | URL | Default Credentials |
 |---------|-----|---------------------|
 | JupyterHub | http://jupyter.local | admin / admin |
 | MLFlow | http://mlflow.local:5000 | - |
-| Grafana | http://grafana.local:3000 | admin / prom-operator |
+| Grafana | http://grafana.local:3000 | admin / admin123 |
+| Prometheus | http://prometheus.local:9090 | - |
+| VictoriaMetrics | http://vm.local:8428 | - |
+| Loki | http://loki.local:3100 | - |
+| Jaeger | http://jaeger.local:16686 | - |
+| Argo Workflows | http://argo.local:2746 | - |
+| ChromaDB | http://chromadb.local:8000 | - |
+| Milvus | http://milvus.local:19530 | - |
+| BentoML/Yatai | http://yatai.local:3000 | - |
 | MinIO Console | http://minio.local:9001 | minioadmin / minioadmin |
 | Control Panel | http://control.local:8080 | - |
+
+### Reimaging a Node
+
+If you need to reimage a faulty or misconfigured node, see the [Reimaging Guide](docs/raspberry-pi-setup.md#reimaging-a-node) which covers:
+- Draining and removing the node from the cluster
+- Backing up data from external storage
+- Reimaging the SD card
+- Rejoining the cluster
 
 ## Project Structure
 
@@ -115,16 +217,24 @@ rpi_kubernetes/
 - **PostgreSQL** - Relational database for MLFlow, JupyterHub
 
 ### Machine Learning
-- **MLFlow** - Experiment tracking and model registry
+- **MLFlow** - Experiment tracking and model registry (PostgreSQL backend)
 - **JupyterHub** - Multi-user notebook environment
 - **Dask** - Distributed computing framework
 - **Ray** - ML distributed runtime
+- **ChromaDB** - Lightweight vector database for development
+- **Milvus** - Production-grade vector database
 
 ### Observability
 - **Prometheus** - Metrics collection
 - **Grafana** - Visualization and dashboards
+- **VictoriaMetrics** - Long-term metrics storage
+- **Loki** - Log aggregation
 - **Jaeger** - Distributed tracing
-- **OpenTelemetry Collector** - Telemetry pipeline
+- **OpenTelemetry Collector** - Unified telemetry pipeline
+
+### MLOps
+- **Argo Workflows** - ML pipeline orchestration
+- **BentoML / Yatai** - Model serving platform
 
 ## Management Framework
 

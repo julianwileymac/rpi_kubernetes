@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: observability
 
 resources:
-  - namespace.yaml
   - configmap.yaml
   - daemonset.yaml
   - service.yaml

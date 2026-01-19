@@ -2,6 +2,58 @@
 
 Automated cluster provisioning and management using Ansible.
 
+## Windows Compatibility
+
+**Note for Windows Users**: If you encounter an `OSError: [WinError 1] Incorrect function` error when running `ansible-playbook` on Windows, this is a known issue with Ansible's blocking I/O check. Use one of these solutions:
+
+### Solution 1: Use WSL (Recommended)
+
+Run Ansible commands from WSL (Windows Subsystem for Linux):
+
+```powershell
+# In PowerShell, switch to WSL
+wsl
+
+# Then run Ansible commands from WSL
+cd /mnt/c/Users/Julian\ Wiley/Documents/GitHub/rpi_kubernetes
+ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/bootstrap.yml
+```
+
+### Solution 2: Use Command Prompt (CMD)
+
+Run Ansible from Windows Command Prompt instead of PowerShell:
+
+```cmd
+# In Command Prompt (cmd.exe)
+cd C:\Users\Julian Wiley\Documents\GitHub\rpi_kubernetes
+ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/bootstrap.yml
+```
+
+### Solution 3: Update Ansible
+
+Try updating to the latest version of Ansible, which may have fixes for Windows:
+
+```powershell
+pip install --upgrade ansible
+```
+
+### Solution 4: Use PowerShell Scripts Instead (Recommended)
+
+Instead of Ansible, use the Windows-native PowerShell scripts that provide the same functionality:
+
+```powershell
+# Bootstrap all nodes without Ansible
+.\bootstrap\scripts\bootstrap-cluster.ps1 -ControlPlane "ubuntu@192.168.1.100" -Workers @("julian@192.168.1.101",...)
+
+# Or use the all-in-one script with auto-discovery
+.\bootstrap\scripts\port-to-rpi.ps1 -Discover -RunBootstrap
+
+# Diagnose cluster health
+.\bootstrap\scripts\diagnose-cluster.ps1 -ControlPlane "ubuntu@192.168.1.100" -Workers @("julian@192.168.1.101",...)
+```
+
+See [bootstrap/README.md](../bootstrap/README.md) and [docs/setup-guide.md](../docs/setup-guide.md) for detailed PowerShell workflows.
+
 ## Overview
 
 These playbooks automate:
@@ -31,10 +83,10 @@ ansible-galaxy collection install ansible.posix
 ssh-keygen -t ed25519 -C "ansible@rpi-cluster"
 
 # Copy to all nodes
-ssh-copy-id pi@192.168.1.101
-ssh-copy-id pi@192.168.1.102
-ssh-copy-id pi@192.168.1.103
-ssh-copy-id pi@192.168.1.104
+ssh-copy-id julian@192.168.1.101
+ssh-copy-id julian@192.168.1.102
+ssh-copy-id julian@192.168.1.103
+ssh-copy-id julian@192.168.1.104
 ssh-copy-id ubuntu@192.168.1.100
 ```
 
@@ -157,7 +209,7 @@ all:
           
     workers:
       hosts:
-        rpi5-node-1:
+        rpi1:
           ansible_host: 192.168.1.101
           node_ip: 192.168.1.101
         # ... more nodes
@@ -180,7 +232,7 @@ all:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `ansible_host` | SSH address | `192.168.1.101` |
-| `ansible_user` | SSH user | `pi` |
+| `ansible_user` | SSH user | `julian` |
 | `node_ip` | Node's cluster IP | `192.168.1.101` |
 | `node_arch` | CPU architecture | `arm64` |
 | `external_storage_device` | USB SSD device | `/dev/sda` |
@@ -213,10 +265,10 @@ ansible workers -m systemd -a "name=k3s-agent state=restarted"
 
 ```bash
 # Drain a node for maintenance
-ansible control_plane -a "kubectl drain rpi5-node-1 --ignore-daemonsets --delete-emptydir-data"
+ansible control_plane -a "kubectl drain rpi1 --ignore-daemonsets --delete-emptydir-data"
 
 # Uncordon after maintenance
-ansible control_plane -a "kubectl uncordon rpi5-node-1"
+ansible control_plane -a "kubectl uncordon rpi1"
 ```
 
 ### Update k3s
@@ -235,7 +287,7 @@ ansible-playbook playbooks/k3s-install.yml --tags "server,agent"
 
 ```bash
 # Test SSH
-ssh -v pi@192.168.1.101
+ssh -v julian@192.168.1.101
 
 # Check ansible connectivity
 ansible all -m ping -vvv
@@ -245,10 +297,10 @@ ansible all -m ping -vvv
 
 ```bash
 # Check specific node
-ansible rpi5-node-1 -m setup
+ansible rpi1 -m setup
 
 # Run with verbose output
-ansible-playbook playbooks/bootstrap.yml -vvv --limit rpi5-node-1
+ansible-playbook playbooks/bootstrap.yml -vvv --limit rpi1
 ```
 
 ### k3s Installation Issues

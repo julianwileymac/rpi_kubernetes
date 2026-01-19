@@ -27,6 +27,14 @@ spec:
               value: "/badger/data"
             - name: BADGER_DIRECTORY_KEY
               value: "/badger/key"
+            # Prometheus metrics storage configuration
+            - name: METRICS_STORAGE_TYPE
+              value: "prometheus"
+            - name: PROMETHEUS_SERVER_URL
+              value: "http://prometheus-kube-prometheus-prometheus.observability:9090"
+            # Admin HTTP port for metrics
+            - name: ADMIN_HTTP_PORT
+              value: "14269"
           ports:
             - name: ui
               containerPort: 16686
@@ -42,6 +50,9 @@ spec:
               protocol: TCP
             - name: collector-grpc
               containerPort: 14250
+              protocol: TCP
+            - name: admin-http
+              containerPort: 14269
               protocol: TCP
           volumeMounts:
             - name: data
@@ -67,7 +78,8 @@ spec:
             periodSeconds: 10
       volumes:
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: jaeger-data
       # Prefer control plane
       affinity:
         nodeAffinity:

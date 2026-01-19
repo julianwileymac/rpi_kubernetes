@@ -28,13 +28,20 @@ resources:
   - base-services/jupyterhub/
   - base-services/dask-ray/
   - base-services/management/
+  - base-services/chromadb/
   
   # Observability stack
   - observability/otel-collector/
   - observability/jaeger/
+  - observability/victoriametrics/
+  - observability/prometheus/
   
-  # Note: Prometheus/Grafana deployed via Helm separately
-  # See base-services/prometheus/README.md
+  # MLOps
+  - mlops/argo-workflows/
+  - mlops/bentoml/
+  
+  # Note: Prometheus/Grafana, Loki, Milvus deployed via Helm separately
+  # See respective README.md files for installation instructions
 
 # ConfigMap generators (if needed)
 # configMapGenerator:

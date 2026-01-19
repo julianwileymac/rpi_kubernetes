@@ -4,7 +4,7 @@ metadata:
   name: mlflow-config
   namespace: ml-platform
 data:
-  # PostgreSQL connection
+  # PostgreSQL backend for production use
   MLFLOW_BACKEND_STORE_URI: "postgresql://mlflow:mlflow123@postgresql.data-services.svc.cluster.local:5432/mlflow"
   # MinIO/S3 artifact storage
   MLFLOW_S3_ENDPOINT_URL: "http://minio.data-services.svc.cluster.local:9000"

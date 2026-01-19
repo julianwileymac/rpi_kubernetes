@@ -28,6 +28,18 @@ class KubernetesSettings(BaseSettings):
         default="default",
         description="Default namespace for operations.",
     )
+    auto_discover: bool = Field(
+        default=True,
+        description="Auto-discover local clusters (in-cluster, env KUBECONFIG, default kubeconfig).",
+    )
+    extra_kubeconfig_paths: list[str] = Field(
+        default=[],
+        description="Additional kubeconfig paths to try during auto-discovery.",
+    )
+    context_preference: list[str] = Field(
+        default=[],
+        description="Preferred contexts to try (in order) when auto-detecting.",
+    )
 
 
 class TelemetrySettings(BaseSettings):

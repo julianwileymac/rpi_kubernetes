@@ -1,0 +1,98 @@
+# =============================================================================
+# Loki Helm Values (grafana/loki) - Non-deprecated chart
+# =============================================================================
+# Install with:
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm repo update
+#   helm upgrade --install loki grafana/loki \
+#     --namespace observability --create-namespace -f values.yaml
+# =============================================================================
+
+# Use single-binary mode; transitional mode avoids validation conflict
+deploymentMode: SingleBinary<->SimpleScalable
+
+# Disable simpleScalable path by setting all replicas to 0
+simpleScalable:
+  enabled: false
+  replicas: 0
+  gateway:
+    replicas: 0
+  distributor:
+    replicas: 0
+  ingester:
+    replicas: 0
+  querier:
+    replicas: 0
+  queryFrontend:
+    replicas: 0
+  compactor:
+    replicas: 0
+  indexGateway:
+    replicas: 0
+  ruler:
+    replicas: 0
+
+# Loki configuration
+loki:
+  storage:
+    type: filesystem
+  useTestSchema: true
+  config: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      replication_factor: 1
+      path_prefix: /var/loki
+    storage_config:
+      filesystem:
+        chunks_directory: /var/loki/chunks
+        rules_directory: /var/loki/rules
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    compactor:
+      retention_enabled: true
+      retention_delete_delay: 2h
+      retention_delete_worker_count: 150
+    limits_config:
+      retention_period: 720h  # 30 days
+      ingestion_rate_mb: 10
+      ingestion_burst_size_mb: 20
+
+# Single-binary pod settings
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+service:
+  type: ClusterIP
+  port: 3100
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hosts:
+    - loki.local
+  annotations: {}
+  tls: []
+
+# Disable optional gateway component
+gateway:
+  enabled: false

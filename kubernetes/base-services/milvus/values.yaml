@@ -1,0 +1,101 @@
+# =============================================================================
+# Milvus Helm Values
+# =============================================================================
+# Install with:
+#   helm repo add milvus https://milvus-io.github.io/milvus-helm
+#   helm repo update
+#   helm install milvus milvus/milvus \
+#     --namespace data-services --create-namespace -f values.yaml
+# =============================================================================
+
+# Milvus Standalone mode (appropriate for RPi cluster)
+mode: standalone
+
+# Image configuration
+image:
+  repository: milvusdb/milvus
+  tag: v2.4.0
+  pullPolicy: IfNotPresent
+
+# Milvus configuration
+config:
+  common:
+    defaultPartitionName: "_default"
+    defaultIndexName: "_default_idx"
+    retentionDuration: 432000  # 5 days
+    entityExpiration: 432000
+    log:
+      level: info
+      path: /var/lib/milvus/logs
+      maxLogSize: 300
+      maxAge: 10
+      maxBackups: 20
+
+# Storage configuration
+persistence:
+  enabled: true
+  storageClass: local-path
+  size: 50Gi
+  accessMode: ReadWriteOnce
+
+# MinIO for object storage (using existing MinIO)
+minio:
+  enabled: false  # Use external MinIO
+
+# External MinIO configuration
+externalS3:
+  enabled: true
+  host: minio.data-services.svc.cluster.local
+  port: 9000
+  accessKey: minioadmin
+  secretKey: minioadmin123
+  bucketName: milvus-bucket
+  useSSL: false
+  useIAM: false
+
+# etcd configuration (embedded for standalone)
+etcd:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: local-path
+    size: 10Gi
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Milvus standalone resources
+standalone:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 19530
+
+# Ingress
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hosts:
+    - host: milvus.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+# Metrics
+metrics:
+  serviceMonitor:
+    enabled: true
+    namespace: observability

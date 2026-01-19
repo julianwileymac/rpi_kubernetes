@@ -1,0 +1,113 @@
+# =============================================================================
+# Argo Workflows Helm Values
+# =============================================================================
+# Install with:
+#   helm repo add argo https://argoproj.github.io/argo-helm
+#   helm repo update
+#   helm install argo-workflows argo/argo-workflows \
+#     --namespace mlops --create-namespace -f values.yaml
+# =============================================================================
+
+# Controller configuration
+controller:
+  image:
+    repository: quay.io/argoproj/workflow-controller
+    tag: v3.5.5
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Workflow execution settings
+  workflow:
+    # Artifact repository configuration (MinIO)
+    artifactRepository:
+      archiveLogs: true
+      s3:
+        bucket: argo-workflows
+        endpoint: minio.data-services.svc.cluster.local:9000
+        insecure: true
+        accessKeySecret:
+          name: argo-workflows-minio
+          key: accesskey
+        secretKeySecret:
+          name: argo-workflows-minio
+          key: secretkey
+        useSDKCreds: false
+  
+  # Metrics
+  metricsConfig:
+    enabled: true
+    path: /metrics
+    port: 9090
+
+# Server configuration (UI)
+server:
+  enabled: true
+  image:
+    repository: quay.io/argoproj/argocli
+    tag: v3.5.5
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 2746
+  
+  # Ingress
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - host: argo.local
+        paths:
+          - path: /
+            pathType: Prefix
+  
+  # Authentication (disable for development)
+  authMode: server
+
+# Executor configuration
+executor:
+  image:
+    repository: quay.io/argoproj/argoexec
+    tag: v3.5.5
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# ServiceAccount for workflows
+workflow:
+  serviceAccount:
+    create: true
+    name: argo-workflow
+
+# RBAC
+rbac:
+  create: true
+
+# Single namespace mode (for RPi cluster)
+singleNamespace: false
+
+# Persistence for workflow data
+persistence:
+  archive: false  # Use MinIO for artifacts instead

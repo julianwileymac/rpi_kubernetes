@@ -65,6 +65,21 @@ grafana:
         gnetId: 1860
         revision: 27
         datasource: Prometheus
+  
+  # Additional data sources
+  additionalDataSources:
+    - name: VictoriaMetrics
+      type: prometheus
+      url: http://victoriametrics.observability:8428
+      access: proxy
+    - name: Loki
+      type: loki
+      url: http://loki.observability:3100
+      access: proxy
+    - name: Jaeger
+      type: jaeger
+      url: http://jaeger-query.observability:16686
+      access: proxy
 
 # Prometheus configuration
 prometheus:
@@ -93,6 +108,14 @@ prometheus:
     # Service monitors
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
+    
+    # Remote write to VictoriaMetrics for long-term storage
+    remoteWrite:
+      - url: http://victoriametrics.observability:8428/api/v1/write
+        queueConfig:
+          maxSamplesPerSend: 1000
+          maxShards: 200
+          capacity: 10000
 
 # AlertManager configuration
 alertmanager:
@@ -133,6 +156,21 @@ defaultRules:
     prometheus: true
 ```
 
+## VictoriaMetrics Integration
+
+Prometheus is configured to write metrics to VictoriaMetrics for long-term storage (90 days). VictoriaMetrics provides:
+
+- **Long-term Retention**: 90 days vs. Prometheus' 15 days
+- **Resource Efficiency**: 3-5x less RAM and disk usage
+- **PromQL Compatibility**: Drop-in replacement for Prometheus queries
+- **Better Compression**: More efficient storage
+
+VictoriaMetrics is automatically configured as:
+- **Remote Write Target**: Prometheus writes all metrics to VictoriaMetrics
+- **Grafana Datasource**: Query long-term metrics directly from VictoriaMetrics
+
+See [kubernetes/observability/victoriametrics/](../observability/victoriametrics/) for deployment details.
+
 ## Accessing Services
 
 After installation:
@@ -141,6 +179,7 @@ After installation:
 |---------|-----|---------------------|
 | Grafana | http://grafana.local:3000 | admin / admin123 |
 | Prometheus | http://prometheus.local:9090 | - |
+| VictoriaMetrics | http://vm.local:8428 | - |
 | Alertmanager | http://alertmanager.local:9093 | - |
 
 ## Pre-configured Dashboards

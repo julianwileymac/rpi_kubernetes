@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: data-services
 
 resources:
-  - namespace.yaml
   - secret.yaml
   - pvc.yaml
   - deployment.yaml

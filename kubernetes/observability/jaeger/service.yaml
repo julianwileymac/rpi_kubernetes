@@ -10,6 +10,10 @@ spec:
       port: 16686
       targetPort: 16686
       protocol: TCP
+    - name: admin-http
+      port: 14269
+      targetPort: 14269
+      protocol: TCP
   selector:
     app: jaeger
 ---

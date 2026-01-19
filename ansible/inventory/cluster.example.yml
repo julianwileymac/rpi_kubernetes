@@ -8,7 +8,7 @@
 all:
   vars:
     # SSH Configuration
-    ansible_user: pi
+    ansible_user: julian
     ansible_ssh_private_key_file: ~/.ssh/id_rsa
     ansible_python_interpreter: /usr/bin/python3
     
@@ -57,7 +57,6 @@ all:
     # ==========================================================================
     workers:
       vars:
-        ansible_user: pi
         node_arch: arm64
         # External USB SSD device
         external_storage_device: /dev/sda
@@ -68,25 +67,25 @@ all:
           - "--node-label=hardware/model=rpi5"
 
       hosts:
-        rpi5-node-1:
+        rpi1:
           ansible_host: 192.168.1.101
           node_ip: 192.168.1.101
           node_labels:
             - "topology.kubernetes.io/zone=rack-1"
 
-        rpi5-node-2:
+        rpi2:
           ansible_host: 192.168.1.102
           node_ip: 192.168.1.102
           node_labels:
             - "topology.kubernetes.io/zone=rack-1"
 
-        rpi5-node-3:
+        rpi3:
           ansible_host: 192.168.1.103
           node_ip: 192.168.1.103
           node_labels:
             - "topology.kubernetes.io/zone=rack-1"
 
-        rpi5-node-4:
+        rpi4:
           ansible_host: 192.168.1.104
           node_ip: 192.168.1.104
           node_labels:

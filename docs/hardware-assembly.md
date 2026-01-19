@@ -210,13 +210,13 @@ For a 5-node cluster:
 # /usr/local/bin/graceful-shutdown.sh
 
 # Drain k3s nodes
-for node in rpi5-node-{1..4}; do
+for node in rpi{1..4}; do
     kubectl drain $node --ignore-daemonsets --delete-emptydir-data
 done
 
 # Shutdown workers
 for i in {101..104}; do
-    ssh pi@192.168.1.$i "sudo shutdown -h now"
+    ssh julian@192.168.1.$i "sudo shutdown -h now"
 done
 
 # Wait for workers to stop

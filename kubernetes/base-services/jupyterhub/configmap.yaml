@@ -5,9 +5,6 @@ metadata:
   namespace: development
 data:
   jupyterhub_config.py: |
-    import os
-    from kubernetes_asyncio import client
-    
     c = get_config()
     
     # Hub configuration
@@ -16,101 +13,27 @@ data:
     c.JupyterHub.hub_ip = '0.0.0.0'
     c.JupyterHub.hub_port = 8081
     
-    # Use KubeSpawner for dynamic pod spawning
-    c.JupyterHub.spawner_class = 'kubespawner.KubeSpawner'
+    # Use simple local spawner (spawns notebooks in same container)
+    c.JupyterHub.spawner_class = 'jupyterhub.spawner.SimpleLocalProcessSpawner'
     
-    # Spawner configuration
-    c.KubeSpawner.namespace = 'development'
-    c.KubeSpawner.start_timeout = 300
-    c.KubeSpawner.http_timeout = 60
-    
-    # Default image (multi-arch compatible)
-    c.KubeSpawner.image = 'jupyter/scipy-notebook:latest'
-    
-    # Resource limits per user
-    c.KubeSpawner.cpu_limit = 2
-    c.KubeSpawner.cpu_guarantee = 0.5
-    c.KubeSpawner.mem_limit = '4G'
-    c.KubeSpawner.mem_guarantee = '1G'
-    
-    # Storage configuration
-    c.KubeSpawner.storage_capacity = '10Gi'
-    c.KubeSpawner.storage_class = 'local-path'
-    c.KubeSpawner.pvc_name_template = 'claim-{username}'
-    c.KubeSpawner.storage_pvc_ensure = True
-    
-    # Volume mounts
-    c.KubeSpawner.volumes = [
-        {
-            'name': 'home',
-            'persistentVolumeClaim': {
-                'claimName': 'claim-{username}'
-            }
-        }
-    ]
-    c.KubeSpawner.volume_mounts = [
-        {
-            'name': 'home',
-            'mountPath': '/home/jovyan'
-        }
-    ]
-    
-    # Environment variables for all users
-    c.KubeSpawner.environment = {
-        'MLFLOW_TRACKING_URI': 'http://mlflow.ml-platform.svc.cluster.local:5000',
-        'S3_ENDPOINT_URL': 'http://minio.data-services.svc.cluster.local:9000',
-    }
-    
-    # Profile options for users
-    c.KubeSpawner.profile_list = [
-        {
-            'display_name': 'Minimal (0.5 CPU, 1GB RAM)',
-            'kubespawner_override': {
-                'cpu_guarantee': 0.25,
-                'cpu_limit': 0.5,
-                'mem_guarantee': '512M',
-                'mem_limit': '1G',
-            }
-        },
-        {
-            'display_name': 'Standard (1 CPU, 2GB RAM)',
-            'default': True,
-            'kubespawner_override': {
-                'cpu_guarantee': 0.5,
-                'cpu_limit': 1,
-                'mem_guarantee': '1G',
-                'mem_limit': '2G',
-            }
-        },
-        {
-            'display_name': 'Large (2 CPU, 4GB RAM)',
-            'kubespawner_override': {
-                'cpu_guarantee': 1,
-                'cpu_limit': 2,
-                'mem_guarantee': '2G',
-                'mem_limit': '4G',
-            }
-        },
-    ]
-    
-    # Simple authenticator (change for production!)
+    # Simple authenticator - any username with password 'jupyter'
     c.JupyterHub.authenticator_class = 'jupyterhub.auth.DummyAuthenticator'
     c.DummyAuthenticator.password = 'jupyter'
     
     # Admin users
     c.Authenticator.admin_users = {'admin'}
     
-    # Database configuration
-    c.JupyterHub.db_url = 'postgresql://jupyterhub:jupyter123@postgresql.data-services.svc.cluster.local:5432/jupyterhub'
+    # Database - use SQLite (simpler)
+    c.JupyterHub.db_url = 'sqlite:///jupyterhub.sqlite'
     
-    # Cleanup settings
-    c.JupyterHub.cleanup_servers = True
+    # Allow any username
+    c.Authenticator.allowed_users = set()
+    c.Authenticator.allow_all = True
     
-    # Cull idle servers after 1 hour
-    c.JupyterHub.services = [
-        {
-            'name': 'cull-idle',
-            'admin': True,
-            'command': ['cull_idle_servers.py', '--timeout=3600'],
-        }
-    ]
+    # Notebook directory
+    c.Spawner.notebook_dir = '/home/jovyan'
+    
+    # Environment variables for MLflow integration
+    c.Spawner.environment = {
+        'MLFLOW_TRACKING_URI': 'http://mlflow.ml-platform.svc.cluster.local:5000',
+    }

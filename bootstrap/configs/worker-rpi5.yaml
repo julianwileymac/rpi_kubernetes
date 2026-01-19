@@ -7,8 +7,8 @@
 
 # Node Identity (customize per node)
 node:
-  # Hostname pattern: rpi5-node-{1,2,3,4}
-  hostname: rpi5-node-1
+  # Hostname pattern: rpi{1,2,3,4}
+  hostname: rpi1
   role: worker
   # Set to the node's static IP
   ip_address: 192.168.1.101
@@ -126,7 +126,7 @@ resources:
 # 
 # Node 2:
 #   node:
-#     hostname: rpi5-node-2
+#     hostname: rpi2
 #     ip_address: 192.168.1.102
 #   network:
 #     static_ip:
@@ -134,7 +134,7 @@ resources:
 #
 # Node 3:
 #   node:
-#     hostname: rpi5-node-3
+#     hostname: rpi3
 #     ip_address: 192.168.1.103
 #   network:
 #     static_ip:
@@ -142,7 +142,7 @@ resources:
 #
 # Node 4:
 #   node:
-#     hostname: rpi5-node-4
+#     hostname: rpi4
 #     ip_address: 192.168.1.104
 #   network:
 #     static_ip:

@@ -57,12 +57,30 @@ grafana:
         gnetId: 13502
         revision: 2
         datasource: Prometheus
+      ray:
+        gnetId: 12006
+        revision: 1
+        datasource: Prometheus
+      mlflow:
+        gnetId: 12708
+        revision: 1
+        datasource: Prometheus
   
   # Additional data sources
   additionalDataSources:
     - name: Jaeger
       type: jaeger
       url: http://jaeger-query.observability:16686
+      access: proxy
+      isDefault: false
+    - name: Loki
+      type: loki
+      url: http://loki.observability:3100
+      access: proxy
+      isDefault: false
+    - name: VictoriaMetrics
+      type: prometheus
+      url: http://victoriametrics.observability:8428
       access: proxy
       isDefault: false
 
@@ -93,6 +111,14 @@ prometheus:
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     ruleSelectorNilUsesHelmValues: false
+    
+    # Remote write to VictoriaMetrics for long-term storage
+    remoteWrite:
+      - url: http://victoriametrics.observability:8428/api/v1/write
+        queueConfig:
+          maxSamplesPerSend: 1000
+          maxShards: 200
+          capacity: 10000
     
     # Additional scrape configs for MinIO
     additionalScrapeConfigs:
