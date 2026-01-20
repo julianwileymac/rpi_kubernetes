@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..config import Settings, get_settings
-from ..services import KubernetesService, MLFlowService
+from ..services import KubernetesService, MLFlowService, MinioService
 
 router = APIRouter()
 
@@ -16,6 +16,7 @@ class HealthStatus(BaseModel):
     version: str
     kubernetes_connected: bool
     mlflow_connected: bool
+    minio_connected: bool
 
 
 @router.get("/health", response_model=HealthStatus)
@@ -39,11 +40,21 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthStat
         except Exception:
             pass
 
+    # Check MinIO connection
+    minio_connected = False
+    if settings.minio.enabled:
+        try:
+            minio_service = MinioService(settings)
+            minio_connected = await minio_service.health_check()
+        except Exception:
+            pass
+
     return HealthStatus(
         status="healthy" if k8s_connected else "degraded",
         version="0.1.0",
         kubernetes_connected=k8s_connected,
         mlflow_connected=mlflow_connected,
+        minio_connected=minio_connected,
     )
 
 

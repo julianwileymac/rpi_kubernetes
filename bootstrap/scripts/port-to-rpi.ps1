@@ -62,6 +62,7 @@ $RepoRoot = Split-Path -Parent $ScriptDir
 # Script paths
 $PrepScript = Join-Path $ScriptDir "prep-existing-os.sh"
 $BootstrapScript = Join-Path $ScriptDir "prepare-rpi.sh"
+$StorageHelperScript = Join-Path $ScriptDir "mount-external-storage.sh"
 $DiscoverScript = Join-Path $ScriptDir "discover-nodes.ps1"
 
 # Colors for output
@@ -93,6 +94,11 @@ if (-not (Test-Path $PrepScript)) {
 
 if (-not (Test-Path $BootstrapScript)) {
     Write-Error "prepare-rpi.sh not found at: $BootstrapScript"
+    exit 1
+}
+
+if (-not (Test-Path $StorageHelperScript)) {
+    Write-Error "mount-external-storage.sh not found at: $StorageHelperScript"
     exit 1
 }
 
@@ -262,6 +268,22 @@ chmod +x ~/prep-existing-os.sh && sudo ~/prep-existing-os.sh --hostname $hostnam
         Write-Warning "Error copying bootstrap script: $_"
         Write-Info "You can copy it manually later: scp `"$BootstrapScript`" julian@${ip}:~/"
     }
+
+    # Step 3b: Copy storage helper script to julian user
+    Write-Info "Copying mount-external-storage.sh to julian@$ip..."
+    $copyHelperCmd = "scp $ScpArgs `"$StorageHelperScript`" julian@${ip}:~/mount-external-storage.sh"
+    try {
+        Invoke-Expression $copyHelperCmd
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Failed to copy storage helper script to julian user"
+            Write-Info "You can copy it manually later: scp `"$StorageHelperScript`" julian@${ip}:~/"
+        } else {
+            Write-Success "Storage helper script copied to julian user"
+        }
+    } catch {
+        Write-Warning "Error copying storage helper script: $_"
+        Write-Info "You can copy it manually later: scp `"$StorageHelperScript`" julian@${ip}:~/"
+    }
     
     # Step 4: Run bootstrap script if -RunBootstrap is set
     if ($RunBootstrap) {
@@ -269,7 +291,7 @@ chmod +x ~/prep-existing-os.sh && sudo ~/prep-existing-os.sh --hostname $hostnam
         
         $lastOctet = $ip.Split('.')[-1]
         $bootstrapCmd = @"
-chmod +x ~/prepare-rpi.sh && sudo ~/prepare-rpi.sh --hostname $hostname --ip 192.168.1.$lastOctet/24 --gateway 192.168.1.1 --timezone America/New_York --skip-reboot-prompt
+chmod +x ~/prepare-rpi.sh ~/mount-external-storage.sh && sudo ~/prepare-rpi.sh --hostname $hostname --ip 192.168.1.$lastOctet/24 --gateway 192.168.1.1 --timezone America/New_York --storage auto --skip-reboot-prompt
 "@
         
         $runBootstrapCmd = "ssh $SshArgs -o StrictHostKeyChecking=no julian@${ip} `"$bootstrapCmd`""
@@ -308,8 +330,8 @@ if (-not $RunBootstrap) {
         
         Write-Host "  # $hostname" -ForegroundColor Yellow
         Write-Host "  ssh julian@$ip" -ForegroundColor White
-        Write-Host "  sudo chmod +x ~/prepare-rpi.sh" -ForegroundColor White
-        Write-Host "  sudo ~/prepare-rpi.sh --hostname $hostname --ip 192.168.1.$lastOctet/24 --timezone America/New_York" -ForegroundColor White
+        Write-Host "  sudo chmod +x ~/prepare-rpi.sh ~/mount-external-storage.sh" -ForegroundColor White
+        Write-Host "  sudo ~/prepare-rpi.sh --hostname $hostname --ip 192.168.1.$lastOctet/24 --timezone America/New_York --storage auto" -ForegroundColor White
         Write-Host ""
     }
     
@@ -326,6 +348,6 @@ if (-not $RunBootstrap) {
     Write-Host ""
 }
 
-Write-Info "To run bootstrap with additional options (e.g., --storage /dev/sda), use:"
+Write-Info "To run bootstrap with additional options (e.g., --storage auto or /dev/sda), use:"
 Write-Host "  .\bootstrap-cluster.ps1 -Workers @(<node-list>) ..."
 Write-Host ""

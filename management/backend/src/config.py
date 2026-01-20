@@ -67,6 +67,26 @@ class MLFlowSettings(BaseSettings):
     )
 
 
+class MinioSettings(BaseSettings):
+    """MinIO settings."""
+
+    model_config = SettingsConfigDict(env_prefix="MINIO_")
+
+    enabled: bool = Field(default=True, description="Enable MinIO health checks")
+    endpoint: str = Field(
+        default="http://minio.data-services.svc.cluster.local:9000",
+        description="MinIO API endpoint",
+    )
+    health_path: str = Field(
+        default="/minio/health/ready",
+        description="MinIO health check path",
+    )
+    timeout_seconds: float = Field(
+        default=5.0,
+        description="Health check timeout in seconds",
+    )
+
+
 class HardwareSettings(BaseSettings):
     """Hardware monitoring settings."""
 
@@ -110,6 +130,7 @@ class Settings(BaseSettings):
     kubernetes: KubernetesSettings = Field(default_factory=KubernetesSettings)
     telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
     mlflow: MLFlowSettings = Field(default_factory=MLFlowSettings)
+    minio: MinioSettings = Field(default_factory=MinioSettings)
     hardware: HardwareSettings = Field(default_factory=HardwareSettings)
 
 

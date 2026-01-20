@@ -364,6 +364,10 @@ kubectl get svc -A | grep LoadBalancer
 192.168.1.202  jupyter.local
 192.168.1.203  minio.local
 192.168.1.204  jaeger.local
+
+# Ingress hosts (control.local, etc.) use the ingress-nginx LoadBalancer IP
+kubectl -n ingress get svc ingress-nginx-controller
+192.168.1.205  control.local
 ```
 
 ## Step 10: Access Services
@@ -382,7 +386,12 @@ kubectl get svc -A | grep LoadBalancer
 | Milvus | http://milvus.local:19530 | - |
 | BentoML/Yatai | http://yatai.local:3000 | - |
 | MinIO | http://minio.local:9001 | minioadmin / minioadmin123 |
-| Control Panel | http://control.local:8080 | - |
+| Control Panel | http://control.local | - |
+
+Control panel access options:
+- Ingress: `http://control.local` (hosts entry required)
+- LoadBalancer: `http://<management-ui-external-ip>`
+- NodePort: `http://<node-ip>:30080`
 
 ## Step 11: Deploy Management Control Panel
 

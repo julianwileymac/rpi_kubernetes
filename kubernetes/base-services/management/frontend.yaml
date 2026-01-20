@@ -78,9 +78,25 @@ spec:
   type: LoadBalancer
   ports:
     - name: http
+      port: 8080
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app: management-ui
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: management-ui-nodeport
+  namespace: management
+spec:
+  type: NodePort
+  ports:
+    - name: http
       port: 80
       targetPort: 3000
       protocol: TCP
+      nodePort: 30080
   selector:
     app: management-ui
 ---
@@ -89,6 +105,13 @@ kind: Ingress
 metadata:
   name: management-ui
   namespace: management
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # Next.js specific rewrites
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/use-regex: "false"
 spec:
   ingressClassName: nginx
   rules:

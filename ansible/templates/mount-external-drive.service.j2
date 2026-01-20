@@ -1,0 +1,27 @@
+[Unit]
+Description=Auto-detect and mount external USB storage drive
+Documentation=file:///usr/local/bin/mount-external-drive.sh
+After=local-fs.target systemd-udev-settle.service
+Before=k3s.service k3s-agent.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/mount-external-drive.sh --wait {{ mount_wait_time | default(60) }}
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=300
+
+# Retry logic - retry up to 3 times with 10 second delay
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=3
+
+# Environment variables
+Environment="MOUNT_POINT={{ external_storage_mount | default('/mnt/storage') }}"
+Environment="VERBOSE={{ mount_verbose | default('false') }}"
+
+[Install]
+WantedBy=multi-user.target

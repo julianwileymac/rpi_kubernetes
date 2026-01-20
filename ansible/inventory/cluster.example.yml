@@ -58,8 +58,8 @@ all:
     workers:
       vars:
         node_arch: arm64
-        # External USB SSD device
-        external_storage_device: /dev/sda
+        # External USB SSD device (use "auto" to detect)
+        external_storage_device: auto
         # k3s agent specific args
         k3s_agent_args:
           - "--node-label=kubernetes.io/arch=arm64"

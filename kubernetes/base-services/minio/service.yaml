@@ -25,6 +25,10 @@ metadata:
 spec:
   type: LoadBalancer
   ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
     - name: console
       port: 9001
       targetPort: 9001

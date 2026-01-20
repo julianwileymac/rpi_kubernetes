@@ -47,6 +47,7 @@ data:
   APP_CLUSTER_NAME: "rpi-k8s-cluster"
   APP_LOG_LEVEL: "INFO"
   MLFLOW_TRACKING_URI: "http://mlflow.ml-platform.svc.cluster.local:5000"
+  MINIO_ENDPOINT: "http://minio.data-services.svc.cluster.local:9000"
   OTEL_EXPORTER_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4317"
 ---
 apiVersion: apps/v1

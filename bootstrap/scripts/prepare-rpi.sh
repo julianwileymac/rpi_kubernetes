@@ -10,14 +10,14 @@
 # Usage:
 #   sudo ./prepare-rpi.sh [OPTIONS]
 #   sudo ./prepare-rpi.sh --interactive
-#   sudo ./prepare-rpi.sh --hostname rpi1 --ip 192.168.1.101/24 --storage /dev/sda
+#   sudo ./prepare-rpi.sh --hostname rpi1 --ip 192.168.1.101/24 --storage auto
 #
 # Prerequisites:
 #   - Raspberry Pi 5 (4GB or 8GB RAM)
 #   - Raspberry Pi OS Lite (64-bit) - Bookworm or later
 #   - SSH enabled
 #   - Internet connectivity
-#   - External USB SSD connected (for --storage option)
+#   - External USB SSD connected (auto-detected or via --storage)
 #
 # What this script does:
 #   1. Updates system packages to latest versions
@@ -38,6 +38,7 @@
 
 VERSION="1.0.0"
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # =============================================================================
 # Configuration (can be overridden via command line)
@@ -47,12 +48,15 @@ STATIC_IP="${STATIC_IP:-}"
 GATEWAY="${GATEWAY:-192.168.1.1}"
 DNS_SERVERS="${DNS_SERVERS:-8.8.8.8,1.1.1.1}"
 STORAGE_DEVICE="${STORAGE_DEVICE:-}"
+STORAGE_HELPER_PATH="/usr/local/sbin/mount-external-storage"
 STORAGE_MOUNT="${STORAGE_MOUNT:-/mnt/storage}"
 TIMEZONE="${TIMEZONE:-America/New_York}"
 DRY_RUN=false
 INTERACTIVE=false
 SKIP_UPDATE=false
 SKIP_REBOOT_PROMPT=false
+SKIP_STORAGE=false
+STORAGE_CONFIGURED=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -126,10 +130,13 @@ OPTIONS:
                             Example: --dns 8.8.8.8,1.1.1.1
 
     --storage DEVICE        Configure external USB storage device
+                            Use "auto" to auto-detect
                             Example: --storage /dev/sda
 
     --storage-mount PATH    Storage mount point (default: /mnt/storage)
                             Example: --storage-mount /mnt/data
+
+    --no-storage            Skip external storage setup entirely
 
     --timezone TZ           Set system timezone
                             Example: --timezone America/New_York
@@ -156,7 +163,7 @@ EXAMPLES:
         --hostname rpi1 \
         --ip 192.168.1.101/24 \
         --gateway 192.168.1.1 \
-        --storage /dev/sda \
+        --storage auto \
         --timezone America/New_York
 
     # Interactive mode (prompts for each option):
@@ -176,7 +183,7 @@ WHAT THIS SCRIPT DOES:
     8. Disables WiFi/Bluetooth (power saving)
     9. Installs required packages
     10. Configures kernel networking parameters
-    11. Formats and mounts external storage (if specified)
+    11. Auto-detects and mounts external storage (if available)
     12. Configures UFW firewall
 
 POST-SCRIPT:
@@ -226,10 +233,16 @@ run_interactive() {
     echo "Available block devices:"
     lsblk -d -o NAME,SIZE,TYPE,MODEL | grep disk
     echo ""
-    read -p "Enter external storage device (e.g., /dev/sda, leave empty to skip): " input
-    STORAGE_DEVICE="${input:-}"
+    read -p "Enter external storage device (e.g., /dev/sda), 'auto' to detect, leave empty to skip: " input
+    if [[ -z "$input" ]]; then
+        SKIP_STORAGE=true
+        STORAGE_DEVICE=""
+    else
+        SKIP_STORAGE=false
+        STORAGE_DEVICE="$input"
+    fi
     
-    if [[ -n "$STORAGE_DEVICE" ]]; then
+    if [[ "$SKIP_STORAGE" != "true" ]]; then
         read -p "Enter mount point [/mnt/storage]: " input
         STORAGE_MOUNT="${input:-/mnt/storage}"
     fi
@@ -241,8 +254,12 @@ run_interactive() {
     [[ -n "$STATIC_IP" ]] && echo "  Gateway:      $GATEWAY"
     [[ -n "$STATIC_IP" ]] && echo "  DNS:          $DNS_SERVERS"
     echo "  Timezone:     $TIMEZONE"
-    echo "  Storage:      ${STORAGE_DEVICE:-<none>}"
-    [[ -n "$STORAGE_DEVICE" ]] && echo "  Mount Point:  $STORAGE_MOUNT"
+    if [[ "$SKIP_STORAGE" == "true" ]]; then
+        echo "  Storage:      <skipped>"
+    else
+        echo "  Storage:      ${STORAGE_DEVICE:-auto}"
+        echo "  Mount Point:  $STORAGE_MOUNT"
+    fi
     echo ""
     
     read -p "Proceed with these settings? (y/n) " -n 1 -r
@@ -274,11 +291,17 @@ parse_args() {
                 ;;
             --storage)
                 STORAGE_DEVICE="$2"
+                SKIP_STORAGE=false
                 shift 2
                 ;;
             --storage-mount)
                 STORAGE_MOUNT="$2"
                 shift 2
+                ;;
+            --no-storage)
+                SKIP_STORAGE=true
+                STORAGE_DEVICE=""
+                shift
                 ;;
             --timezone)
                 TIMEZONE="$2"
@@ -595,125 +618,105 @@ EOF
     log_success "Kernel parameters configured"
 }
 
-setup_external_storage() {
-    if [[ -z "$STORAGE_DEVICE" ]]; then
-        return
-    fi
-    
-    log_info "Setting up external storage: $STORAGE_DEVICE"
-    
-    # Check if device exists
-    if [[ ! -b "$STORAGE_DEVICE" ]]; then
-        log_error "Storage device $STORAGE_DEVICE not found"
-        echo ""
-        echo "Available block devices:"
-        lsblk -d -o NAME,SIZE,TYPE,MODEL 2>/dev/null || true
-        echo ""
-        log_warning "Skipping storage setup. Connect the USB SSD and re-run with --storage flag."
-        return 1
-    fi
-    
-    # Get device info
-    DEVICE_SIZE=$(lsblk -b -d -n -o SIZE "$STORAGE_DEVICE" 2>/dev/null || echo "unknown")
-    DEVICE_MODEL=$(lsblk -d -n -o MODEL "$STORAGE_DEVICE" 2>/dev/null || echo "unknown")
-    log_info "Found device: $DEVICE_MODEL ($(numfmt --to=iec-i --suffix=B $DEVICE_SIZE 2>/dev/null || echo $DEVICE_SIZE))"
-    
+install_storage_helper() {
+    local source_script="$SCRIPT_DIR/mount-external-storage.sh"
+
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY RUN] Would partition, format, and mount $STORAGE_DEVICE at $STORAGE_MOUNT"
-        return
+        log_info "[DRY RUN] Would install storage helper to $STORAGE_HELPER_PATH"
+        return 0
     fi
-    
-    # Determine partition name (handles both /dev/sda1 and /dev/nvme0n1p1 formats)
-    if [[ "$STORAGE_DEVICE" == *"nvme"* ]]; then
-        PARTITION="${STORAGE_DEVICE}p1"
-    else
-        PARTITION="${STORAGE_DEVICE}1"
-    fi
-    
-    # Check if already mounted
-    if mount | grep -q "$STORAGE_MOUNT"; then
-        log_info "Storage already mounted at $STORAGE_MOUNT"
-        return
-    fi
-    
-    # Check if partition exists and has data
-    if [[ -b "$PARTITION" ]]; then
-        if blkid "$PARTITION" | grep -q "ext4"; then
-            log_info "Existing ext4 partition found on $PARTITION"
-            read -p "Use existing partition (y) or format fresh (n)? " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-                # Use existing partition
-                log_info "Using existing partition"
-            else
-                # Format
-                log_warning "Formatting will erase all data on $PARTITION"
-                read -p "Are you sure? (y/n) " -n 1 -r
-                echo
-                if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    mkfs.ext4 -F "$PARTITION"
-                else
-                    log_warning "Skipping storage setup"
-                    return
-                fi
-            fi
-        fi
-    else
-        # Create partition
-        log_info "Creating GPT partition table and partition on $STORAGE_DEVICE..."
-        parted -s "$STORAGE_DEVICE" mklabel gpt
-        parted -s "$STORAGE_DEVICE" mkpart primary ext4 0% 100%
-        sleep 2
-        
-        # Wait for partition to appear
-        local wait_count=0
-        while [[ ! -b "$PARTITION" && $wait_count -lt 10 ]]; do
-            sleep 1
-            ((wait_count++))
-        done
-        
-        if [[ ! -b "$PARTITION" ]]; then
-            log_error "Partition $PARTITION did not appear after creation"
-            return 1
-        fi
-        
-        # Format
-        log_info "Formatting $PARTITION as ext4..."
-        mkfs.ext4 -F "$PARTITION"
-    fi
-    
-    # Create mount point
-    mkdir -p "$STORAGE_MOUNT"
-    
-    # Get UUID
-    UUID=$(blkid -s UUID -o value "$PARTITION")
-    if [[ -z "$UUID" ]]; then
-        log_error "Could not get UUID for $PARTITION"
+
+    if [[ ! -f "$source_script" ]]; then
+        log_warning "Storage helper script not found at $source_script"
         return 1
     fi
-    
-    # Add to fstab if not present
-    if ! grep -q "$UUID" /etc/fstab; then
-        echo "# External storage for k3s" >> /etc/fstab
-        echo "UUID=$UUID $STORAGE_MOUNT ext4 defaults,noatime,nodiratime 0 2" >> /etc/fstab
-        log_success "Added $PARTITION to /etc/fstab"
+
+    install -m 0755 "$source_script" "$STORAGE_HELPER_PATH"
+    log_success "Installed storage helper to $STORAGE_HELPER_PATH"
+}
+
+configure_storage_autocheck() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would configure storage auto-check systemd unit"
+        return
     fi
-    
-    # Mount
-    mount -a
-    
-    # Verify mount
-    if ! mount | grep -q "$STORAGE_MOUNT"; then
-        log_error "Failed to mount $PARTITION at $STORAGE_MOUNT"
+
+    if [[ ! -x "$STORAGE_HELPER_PATH" ]]; then
+        log_warning "Storage helper not installed; skipping auto-check configuration"
+        return
+    fi
+
+    local exec_args="--check --mount $STORAGE_MOUNT"
+    if [[ -n "$STORAGE_DEVICE" && "$STORAGE_DEVICE" != "auto" ]]; then
+        exec_args="$exec_args --device $STORAGE_DEVICE"
+    else
+        exec_args="$exec_args --auto"
+    fi
+
+    cat > /etc/systemd/system/mount-external-storage.service << EOF
+[Unit]
+Description=Mount external storage for k3s
+After=network-online.target local-fs.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$STORAGE_HELPER_PATH $exec_args
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable mount-external-storage.service
+    systemctl start mount-external-storage.service || true
+    log_success "Enabled external storage auto-check on boot"
+}
+
+setup_external_storage() {
+    if [[ "$SKIP_STORAGE" == "true" ]]; then
+        log_info "Skipping external storage setup (--no-storage)"
+        return
+    fi
+
+    if ! install_storage_helper; then
+        log_warning "Storage helper not available; skipping storage setup"
+        return
+    fi
+
+    local helper="$STORAGE_HELPER_PATH"
+    local args=(--mount "$STORAGE_MOUNT" --format)
+
+    if [[ -n "$STORAGE_DEVICE" && "$STORAGE_DEVICE" != "auto" ]]; then
+        args+=(--device "$STORAGE_DEVICE")
+    else
+        args+=(--auto)
+    fi
+
+    log_info "Setting up external storage (auto-detect if needed)"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would run: $helper ${args[*]}"
+        return
+    fi
+
+    if ! "$helper" "${args[@]}"; then
+        log_warning "External storage setup did not complete"
         return 1
     fi
-    
-    # Create subdirectories for k3s
-    mkdir -p "$STORAGE_MOUNT"/{containers,volumes,logs,rancher}
-    chmod 755 "$STORAGE_MOUNT"
-    
-    log_success "External storage mounted at $STORAGE_MOUNT"
-    log_info "Storage subdirectories created: containers, volumes, logs, rancher"
+
+    if mount | grep -q " $STORAGE_MOUNT "; then
+        mkdir -p "$STORAGE_MOUNT"/{containers,volumes,logs,rancher}
+        chmod 755 "$STORAGE_MOUNT"
+        STORAGE_CONFIGURED=true
+        log_success "External storage mounted at $STORAGE_MOUNT"
+        log_info "Storage subdirectories created: containers, volumes, logs, rancher"
+    else
+        log_warning "Storage mount not detected at $STORAGE_MOUNT"
+    fi
+
+    configure_storage_autocheck
 }
 
 configure_firewall() {
@@ -805,7 +808,13 @@ print_summary() {
     echo "  [x] WiFi and Bluetooth disabled"
     echo "  [x] Required packages installed"
     echo "  [x] Kernel parameters configured"
-    [[ -n "$STORAGE_DEVICE" ]] && echo "  [x] External storage mounted at: $STORAGE_MOUNT"
+    if [[ "$SKIP_STORAGE" == "true" ]]; then
+        echo "  [ ] External storage skipped"
+    elif [[ "$STORAGE_CONFIGURED" == "true" ]]; then
+        echo "  [x] External storage mounted at: $STORAGE_MOUNT"
+    else
+        echo "  [ ] External storage not mounted (check logs)"
+    fi
     echo "  [x] Firewall configured and enabled"
     echo ""
     
@@ -823,7 +832,7 @@ print_summary() {
         echo "  # Check cgroups are enabled (memory should show 1)"
         echo "  cat /proc/cgroups | grep memory"
         echo ""
-        [[ -n "$STORAGE_DEVICE" ]] && echo "  # Check storage is mounted" && echo "  df -h $STORAGE_MOUNT"
+        [[ "$SKIP_STORAGE" != "true" ]] && echo "  # Check storage is mounted" && echo "  df -h $STORAGE_MOUNT"
         echo ""
         echo "Or run this verification one-liner:"
         echo '  echo "Arch: $(uname -m), Swap: $(free -h | grep Swap | awk '"'"'{print $2}'"'"'), cgroups: $(cat /proc/cgroups | grep memory | awk '"'"'{print $4}'"'"')"'

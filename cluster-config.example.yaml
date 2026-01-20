@@ -1,0 +1,98 @@
+# =============================================================================
+# Cluster Configuration - RPi Kubernetes Cluster (EXAMPLE)
+# =============================================================================
+# Central configuration file for all cluster-related settings.
+# This file is used by bootstrap scripts, Ansible, and documentation.
+#
+# INSTRUCTIONS:
+#   1. Copy this file to cluster-config.yaml
+#   2. Update all IP addresses and usernames to match your environment
+#   3. Do NOT commit cluster-config.yaml to version control
+# =============================================================================
+
+cluster:
+  name: rpi-k8s-cluster
+  domain: local
+  kubeconfig_path: ./kubeconfig.yaml
+
+# =============================================================================
+# Control Plane Configuration
+# =============================================================================
+# The control plane node (typically an Ubuntu Desktop or high-spec machine)
+control_plane:
+  hostname: k8s-control
+  ip: 192.168.12.100           # <-- Update with your control plane IP
+  user: ubuntu                  # <-- Update with your SSH username
+  arch: amd64
+  gpu_enabled: false            # Set to true if you have NVIDIA GPU
+
+# =============================================================================
+# Worker Nodes Configuration
+# =============================================================================
+# Raspberry Pi 5 worker nodes
+workers:
+  - name: rpi1
+    ip: 192.168.12.101         # <-- Update with your RPi IP
+    user: julian                # <-- Update with your SSH username
+    arch: arm64
+    storage_device: /dev/sda    # External USB SSD device (use "auto" to detect)
+  - name: rpi2
+    ip: 192.168.12.102         # <-- Update with your RPi IP
+    user: julian
+    arch: arm64
+    storage_device: /dev/sda
+  - name: rpi3
+    ip: 192.168.12.103         # <-- Update with your RPi IP
+    user: julian
+    arch: arm64
+    storage_device: /dev/sda
+  - name: rpi4
+    ip: 192.168.12.104         # <-- Update with your RPi IP
+    user: julian
+    arch: arm64
+    storage_device: /dev/sda
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+network:
+  gateway: 192.168.12.1         # <-- Update with your gateway IP
+  pod_cidr: 10.42.0.0/16        # k3s default - usually no change needed
+  service_cidr: 10.43.0.0/16    # k3s default - usually no change needed
+  metallb_pool: 192.168.12.200-192.168.12.250  # <-- Update for LoadBalancer IPs
+
+# =============================================================================
+# k3s Configuration
+# =============================================================================
+k3s:
+  version: v1.29.0+k3s1
+  token_file: ./k3s_token.txt
+  server_args:
+    - --disable=traefik
+    - --disable=local-storage
+    - --flannel-backend=vxlan
+    - --write-kubeconfig-mode=644
+  agent_args:
+    - --node-label=kubernetes.io/arch=arm64
+    - --node-label=hardware/type=raspberry-pi
+    - --node-label=hardware/model=rpi5
+
+# =============================================================================
+# SSH Configuration
+# =============================================================================
+ssh:
+  key_path: ~/.ssh/id_ed25519   # <-- Update with your SSH key path
+  default_user: julian          # <-- Update with your default SSH username
+  timeout: 30
+
+# =============================================================================
+# Storage Configuration
+# =============================================================================
+storage:
+  mount_point: /mnt/storage
+  directories:
+    - data
+    - mlruns
+    - postgresql
+    - minio
+    - jupyterhub

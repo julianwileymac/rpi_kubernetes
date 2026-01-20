@@ -1,9 +1,8 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { clusterApi, ServiceInfo } from '@/lib/api'
+import { clusterApi, healthApi, ServiceInfo } from '@/lib/api'
 import {
-  CheckCircle,
   XCircle,
   ExternalLink,
   Database,
@@ -39,10 +38,33 @@ const serviceUrls: Record<string, string> = {
   ray: 'http://ray.local:8265',
 }
 
-function ServiceCard({ service }: { service: ServiceInfo }) {
+function ServiceCard({
+  service,
+  healthStatus,
+}: {
+  service: ServiceInfo
+  healthStatus?: boolean | null
+}) {
   const Icon = serviceIcons[service.name.toLowerCase()] || Boxes
   const url = serviceUrls[service.name.toLowerCase()]
   const hasExternalAccess = service.external_ip || service.type === 'LoadBalancer'
+  const hasHealthStatus = healthStatus !== undefined
+
+  const statusClasses = hasHealthStatus
+    ? healthStatus === null
+      ? 'bg-yellow-500'
+      : healthStatus
+      ? 'bg-green-500'
+      : 'bg-red-500'
+    : 'bg-green-500'
+
+  const statusLabel = hasHealthStatus
+    ? healthStatus === null
+      ? 'Health unknown'
+      : healthStatus
+      ? 'Healthy'
+      : 'Unhealthy'
+    : 'Running'
 
   // Determine ports display
   const mainPort = service.ports[0]
@@ -81,7 +103,10 @@ function ServiceCard({ service }: { service: ServiceInfo }) {
             {service.external_ip || 'Pending IP'}
           </span>
         )}
-        <div className="w-2 h-2 rounded-full bg-green-500 status-indicator"></div>
+        <div
+          className={`w-2 h-2 rounded-full status-indicator ${statusClasses}`}
+          title={statusLabel}
+        ></div>
       </div>
     </div>
   )
@@ -91,6 +116,14 @@ export function ServicesStatus() {
   const { data: services, isLoading, error } = useQuery({
     queryKey: ['services'],
     queryFn: () => clusterApi.getServices(),
+  })
+  const {
+    data: health,
+    isLoading: isHealthLoading,
+    isError: isHealthError,
+  } = useQuery({
+    queryKey: ['health'],
+    queryFn: healthApi.getStatus,
   })
 
   if (isLoading) {
@@ -131,6 +164,9 @@ export function ServicesStatus() {
       !s.name.endsWith('-metrics')
   )
 
+  const minioHealthStatus =
+    isHealthLoading || isHealthError ? null : (health?.minio_connected ?? null)
+
   // Group by namespace
   const grouped = keyServices.reduce((acc, service) => {
     const ns = service.namespace
@@ -154,9 +190,16 @@ export function ServicesStatus() {
               {namespace}
             </div>
             <div className="space-y-2">
-              {namespaceServices.map((service) => (
-                <ServiceCard key={`${service.namespace}-${service.name}`} service={service} />
-              ))}
+              {namespaceServices.map((service) => {
+                const isMinioService = service.name.toLowerCase().startsWith('minio')
+                return (
+                  <ServiceCard
+                    key={`${service.namespace}-${service.name}`}
+                    service={service}
+                    healthStatus={isMinioService ? minioHealthStatus : undefined}
+                  />
+                )
+              })}
             </div>
           </div>
         ))}

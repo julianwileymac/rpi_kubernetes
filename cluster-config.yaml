@@ -1,0 +1,95 @@
+# =============================================================================
+# Cluster Configuration - RPi Kubernetes Cluster
+# =============================================================================
+# Central configuration file for all cluster-related settings.
+# This file is used by bootstrap scripts, Ansible, and documentation.
+#
+# IMPORTANT: This file contains sensitive cluster information.
+#            Do NOT commit to version control.
+#            Use cluster-config.example.yaml as a template.
+# =============================================================================
+
+cluster:
+  name: rpi-k8s-cluster
+  domain: local
+  kubeconfig_path: ./kubeconfig.yaml
+
+# =============================================================================
+# Control Plane Configuration
+# =============================================================================
+control_plane:
+  hostname: k8s-control
+  ip: 192.168.12.112
+  user: julia
+  arch: amd64
+  gpu_enabled: true
+
+# =============================================================================
+# Worker Nodes Configuration
+# =============================================================================
+workers:
+  - name: rpi1
+    ip: 192.168.12.48
+    user: julian
+    arch: arm64
+    storage_device: /dev/sda
+  - name: rpi2
+    ip: 192.168.12.88
+    user: julian
+    arch: arm64
+    storage_device: /dev/sda
+  - name: rpi3
+    ip: 192.168.12.170
+    user: julian
+    arch: arm64
+    storage_device: /dev/sda
+  - name: rpi4
+    ip: 192.168.12.235
+    user: julian
+    arch: arm64
+    storage_device: /dev/sda
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+network:
+  gateway: 192.168.12.1
+  pod_cidr: 10.42.0.0/16
+  service_cidr: 10.43.0.0/16
+  metallb_pool: 192.168.12.200-192.168.12.250
+
+# =============================================================================
+# k3s Configuration
+# =============================================================================
+k3s:
+  version: v1.29.0+k3s1
+  token_file: ./k3s_token.txt
+  server_args:
+    - --disable=traefik
+    - --disable=local-storage
+    - --flannel-backend=vxlan
+    - --write-kubeconfig-mode=644
+  agent_args:
+    - --node-label=kubernetes.io/arch=arm64
+    - --node-label=hardware/type=raspberry-pi
+    - --node-label=hardware/model=rpi5
+
+# =============================================================================
+# SSH Configuration
+# =============================================================================
+ssh:
+  key_path: ~/.ssh/id_ed
+  default_user: julian
+  timeout: 30
+
+# =============================================================================
+# Storage Configuration
+# =============================================================================
+storage:
+  mount_point: /mnt/storage
+  directories:
+    - data
+    - mlruns
+    - postgresql
+    - minio
+    - jupyterhub

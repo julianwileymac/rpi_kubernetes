@@ -16,6 +16,11 @@ data:
     # Use simple local spawner (spawns notebooks in same container)
     c.JupyterHub.spawner_class = 'jupyterhub.spawner.SimpleLocalProcessSpawner'
     
+    # Spawn timeouts - critical for Raspberry Pi with limited resources
+    c.Spawner.start_timeout = 120  # Allow 2 minutes for server to start
+    c.Spawner.http_timeout = 60    # HTTP request timeout
+    c.Spawner.poll_interval = 30   # How often to poll the spawner
+    
     # Simple authenticator - any username with password 'jupyter'
     c.JupyterHub.authenticator_class = 'jupyterhub.auth.DummyAuthenticator'
     c.DummyAuthenticator.password = 'jupyter'

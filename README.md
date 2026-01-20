@@ -125,8 +125,9 @@ The bootstrap process:
 - Disables swap (required by Kubernetes)
 - Enables memory cgroups in kernel
 - Installs required packages
-- Configures external USB storage
+- Configures external USB storage (auto-detects and mounts USB drives)
 - Sets up firewall rules
+- Installs systemd service for automatic drive mounting on boot
 
 ### Step 5: Install k3s Cluster
 
@@ -153,14 +154,23 @@ kubectl get nodes
 ```bash
 # Deploy all base services via Kustomize
 kubectl apply -k kubernetes/
+
+# Wait for services to be ready
+kubectl wait --for=condition=available --timeout=300s deployment/management-ui -n management
+kubectl wait --for=condition=available --timeout=300s deployment/minio -n data-services
+
+# Verify services are accessible
+./bootstrap/scripts/verify-control-panel.sh
+./bootstrap/scripts/verify-minio.sh
 ```
 
 ### Step 8: Access Services
 
-Add these entries to your workstation's hosts file (`/etc/hosts` or `C:\Windows\System32\drivers\etc\hosts`):
+Add these entries to your workstation's hosts file (`/etc/hosts` or `C:\Windows\System32\drivers\etc\hosts`),
+using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-nginx-controller`):
 
 ```
-192.168.1.100  jupyter.local mlflow.local grafana.local minio.local control.local \
+192.168.1.200  jupyter.local mlflow.local grafana.local minio.local control.local \
                prometheus.local vm.local loki.local jaeger.local argo.local \
                chromadb.local milvus.local yatai.local
 ```
@@ -179,7 +189,12 @@ Add these entries to your workstation's hosts file (`/etc/hosts` or `C:\Windows\
 | Milvus | http://milvus.local:19530 | - |
 | BentoML/Yatai | http://yatai.local:3000 | - |
 | MinIO Console | http://minio.local:9001 | minioadmin / minioadmin |
-| Control Panel | http://control.local:8080 | - |
+| Control Panel | http://control.local | - |
+
+Control panel access options:
+- Ingress: `http://control.local` (hosts entry required)
+- LoadBalancer: `http://<management-ui-external-ip>`
+- NodePort: `http://<node-ip>:30080`
 
 ### Reimaging a Node
 
@@ -281,6 +296,74 @@ sudo journalctl -u k3s-agent -f
 ```bash
 # Verify external storage is mounted
 df -h /mnt/storage
+
+# Check mount service status
+sudo systemctl status mount-external-drive.service
+
+# View mount service logs
+sudo journalctl -u mount-external-drive.service -f
+
+# Manually mount external drive (if needed)
+sudo /usr/local/bin/mount-external-drive.sh --verbose
+
+# Or use local script for ad-hoc mounting
+sudo ./bootstrap/scripts/mount-drive-local.sh --verbose
+```
+
+**External drive not auto-mounting:**
+```bash
+# Check if systemd service is enabled
+sudo systemctl is-enabled mount-external-drive.service
+
+# Enable and start the service
+sudo systemctl enable mount-external-drive.service
+sudo systemctl start mount-external-drive.service
+
+# Check service logs for errors
+sudo journalctl -u mount-external-drive.service -n 50
+```
+
+**Control Panel not accessible:**
+```bash
+# Verify control panel deployment and accessibility
+./bootstrap/scripts/verify-control-panel.sh
+
+# Check ingress controller status
+kubectl get pods -n ingress
+kubectl get svc -n ingress ingress-nginx-controller
+
+# Check ingress resource
+kubectl get ingress -n management management-ui
+
+# Verify DNS/hosts file entry
+# Add to /etc/hosts (or C:\Windows\System32\drivers\etc\hosts):
+# <ingress-ip>  control.local
+
+# Access via LoadBalancer (if ingress not working)
+kubectl get svc -n management management-ui-external
+# Then access: http://<loadbalancer-ip>:8080
+```
+
+**Minio endpoint not accessible:**
+```bash
+# Verify Minio health and accessibility
+./bootstrap/scripts/verify-minio.sh
+
+# Check Minio pod status
+kubectl get pods -n data-services -l app=minio
+
+# Test health endpoints directly
+kubectl exec -n data-services <minio-pod-name> -- curl http://localhost:9000/minio/health/live
+kubectl exec -n data-services <minio-pod-name> -- curl http://localhost:9000/minio/health/ready
+
+# Check Minio services
+kubectl get svc -n data-services minio
+kubectl get svc -n data-services minio-external
+
+# Access via LoadBalancer
+kubectl get svc -n data-services minio-external
+# Console: http://<loadbalancer-ip>:9001
+# API: http://<loadbalancer-ip>:9000
 ```
 
 **Service not accessible:**
@@ -289,6 +372,13 @@ df -h /mnt/storage
 kubectl get pods -A
 # Check service endpoints
 kubectl get endpoints -A
+
+# Check ingress resources
+kubectl get ingress -A
+
+# Verify ingress controller
+kubectl get pods -n ingress
+kubectl get svc -n ingress ingress-nginx-controller
 ```
 
 ## License
