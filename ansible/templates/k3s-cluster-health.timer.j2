@@ -1,0 +1,21 @@
+[Unit]
+Description=k3s Cluster Health Check Timer
+Documentation=https://github.com/your-repo/rpi_kubernetes
+# Triggers k3s-cluster-health.service periodically
+
+[Timer]
+# Run health check every 5 minutes
+OnBootSec=2min
+OnUnitActiveSec={{ health_check_interval | default('5min') }}
+
+# Add randomized delay to prevent thundering herd
+RandomizedDelaySec=30
+
+# Persist timer across reboots
+Persistent=true
+
+# Run immediately if a check was missed
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

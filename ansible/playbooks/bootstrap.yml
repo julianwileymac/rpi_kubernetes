@@ -36,6 +36,10 @@
       - iptables
       - python3
       - python3-pip
+      # mDNS/Avahi packages for service discovery
+      - avahi-daemon
+      - avahi-utils
+      - libnss-mdns
 
   tasks:
     - name: Update apt cache
@@ -145,6 +149,58 @@
         - Reload systemd
         - Enable mount external drive service
 
+    # =========================================================================
+    # Avahi/mDNS Configuration for Service Discovery
+    # =========================================================================
+    - name: Configure Avahi daemon
+      ansible.builtin.template:
+        src: ../templates/avahi-daemon.conf.j2
+        dest: /etc/avahi/avahi-daemon.conf
+        mode: '0644'
+        owner: root
+        group: root
+      notify:
+        - Restart Avahi
+
+    - name: Create Avahi services directory
+      ansible.builtin.file:
+        path: /etc/avahi/services
+        state: directory
+        mode: '0755'
+
+    - name: Configure k3s service advertisement for Avahi
+      ansible.builtin.template:
+        src: ../templates/avahi-k3s-service.xml.j2
+        dest: /etc/avahi/services/k3s.service
+        mode: '0644'
+        owner: root
+        group: root
+      notify:
+        - Restart Avahi
+
+    - name: Configure SSH service advertisement for Avahi
+      ansible.builtin.template:
+        src: ../templates/avahi-ssh-service.xml.j2
+        dest: /etc/avahi/services/ssh.service
+        mode: '0644'
+        owner: root
+        group: root
+      notify:
+        - Restart Avahi
+
+    - name: Enable and start Avahi daemon
+      ansible.builtin.systemd:
+        name: avahi-daemon
+        state: started
+        enabled: true
+
+    - name: Configure NSS for mDNS resolution
+      ansible.builtin.lineinfile:
+        path: /etc/nsswitch.conf
+        regexp: '^hosts:'
+        line: 'hosts:          files mdns4_minimal [NOTFOUND=return] dns mdns4'
+        backup: yes
+
   handlers:
     - name: Apply sysctl
       ansible.builtin.command: sysctl --system
@@ -160,6 +216,11 @@
         enabled: true
         state: started
       failed_when: false
+
+    - name: Restart Avahi
+      ansible.builtin.systemd:
+        name: avahi-daemon
+        state: restarted
 
 # =============================================================================
 # Control Plane Specific Configuration
@@ -240,6 +301,65 @@
         state: started
         enabled: true
       when: ansible_os_family == "Debian"
+
+    # =========================================================================
+    # k3s Auto-Start and Health Check Services
+    # =========================================================================
+    - name: Copy k3s health check script
+      ansible.builtin.copy:
+        src: ../../bootstrap/scripts/k3s-health-check.sh
+        dest: /usr/local/bin/k3s-health-check.sh
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Install k3s server startup service
+      ansible.builtin.template:
+        src: ../templates/k3s-server-startup.service.j2
+        dest: /etc/systemd/system/k3s-server-startup.service
+        mode: '0644'
+        owner: root
+        group: root
+      notify:
+        - Reload systemd control plane
+
+    - name: Install k3s cluster health service
+      ansible.builtin.template:
+        src: ../templates/k3s-cluster-health.service.j2
+        dest: /etc/systemd/system/k3s-cluster-health.service
+        mode: '0644'
+        owner: root
+        group: root
+      notify:
+        - Reload systemd control plane
+
+    - name: Install k3s cluster health timer
+      ansible.builtin.template:
+        src: ../templates/k3s-cluster-health.timer.j2
+        dest: /etc/systemd/system/k3s-cluster-health.timer
+        mode: '0644'
+        owner: root
+        group: root
+      notify:
+        - Reload systemd control plane
+        - Enable health check timer
+
+    - name: Enable k3s server startup service
+      ansible.builtin.systemd:
+        name: k3s-server-startup.service
+        enabled: true
+        daemon_reload: yes
+
+  handlers:
+    - name: Reload systemd control plane
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Enable health check timer
+      ansible.builtin.systemd:
+        name: k3s-cluster-health.timer
+        enabled: true
+        state: started
 
 # =============================================================================
 # Worker Node Specific Configuration (Raspberry Pi)
@@ -331,10 +451,41 @@
         - volumes
         - logs
 
+    # =========================================================================
+    # k3s Agent Recovery Service
+    # =========================================================================
+    - name: Copy k3s agent recovery script
+      ansible.builtin.copy:
+        src: ../../bootstrap/scripts/k3s-agent-recovery.sh
+        dest: /usr/local/bin/k3s-agent-recovery.sh
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Install k3s agent recovery service
+      ansible.builtin.template:
+        src: ../templates/k3s-agent-recovery.service.j2
+        dest: /etc/systemd/system/k3s-agent-recovery.service
+        mode: '0644'
+        owner: root
+        group: root
+      notify:
+        - Reload systemd workers
+        - Enable agent recovery service
+
   handlers:
     - name: Reboot required
       ansible.builtin.debug:
         msg: "A reboot is required to apply kernel/boot changes. Run: ansible-playbook playbooks/reboot.yml"
+
+    - name: Reload systemd workers
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Enable agent recovery service
+      ansible.builtin.systemd:
+        name: k3s-agent-recovery.service
+        enabled: true
 
 # =============================================================================
 # Firewall Configuration
@@ -369,6 +520,12 @@
         rule: allow
         port: '22'
         proto: tcp
+
+    - name: Allow mDNS (Avahi)
+      community.general.ufw:
+        rule: allow
+        port: '5353'
+        proto: udp
 
     - name: Allow Kubernetes API
       community.general.ufw:

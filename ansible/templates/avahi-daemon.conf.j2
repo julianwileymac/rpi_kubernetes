@@ -1,0 +1,75 @@
+# =============================================================================
+# Avahi Daemon Configuration
+# =============================================================================
+# This file is managed by Ansible. Local changes will be overwritten.
+#
+# Avahi provides mDNS/DNS-SD for automatic service discovery on the local
+# network. This enables nodes to find each other via hostname.local without
+# requiring static IP addresses or a local DNS server.
+# =============================================================================
+
+[server]
+# The hostname to publish via mDNS (defaults to system hostname)
+#host-name={{ inventory_hostname }}
+
+# Domain name for mDNS
+domain-name=local
+
+# Use hostname from system
+use-hostname=yes
+
+# IPv4 and IPv6 settings
+use-ipv4=yes
+use-ipv6=yes
+
+# Allow hostname lookups through Avahi
+allow-interfaces={{ avahi_interfaces | default('') }}
+#deny-interfaces=
+
+# Enable reflector to allow mDNS across subnets (only if you have multiple subnets)
+enable-reflector={{ avahi_enable_reflector | default('no') }}
+
+# Rate limiting for mDNS queries
+ratelimit-interval-usec=1000000
+ratelimit-burst=1000
+
+[wide-area]
+enable-wide-area=yes
+
+[publish]
+# Disable publishing if this is a client-only setup
+disable-publishing=no
+
+# Disable user service publishing (for security)
+disable-user-service-publishing=no
+
+# Publish hinfo (hardware info) records
+publish-hinfo=yes
+
+# Publish workstation record
+publish-workstation=yes
+
+# Publish domain info
+publish-domain=yes
+
+# Publish DNS-SD service types
+publish-dns-servers={{ ansible_default_ipv4.address | default('') }}
+
+# Publish hostname address records
+publish-addresses=yes
+
+# Add host-level TXT records (optional, for identification)
+#add-service-cookie=yes
+
+[reflector]
+enable-reflector={{ avahi_enable_reflector | default('no') }}
+reflect-ipv=no
+
+[rlimits]
+# Resource limits
+rlimit-core=0
+rlimit-data=4194304
+rlimit-fsize=0
+rlimit-nofile=768
+rlimit-stack=4194304
+rlimit-nproc=3

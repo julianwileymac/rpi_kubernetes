@@ -1,0 +1,29 @@
+<?xml version="1.0" standalone='no'?>
+<!--
+=============================================================================
+Avahi Service Definition: SSH
+=============================================================================
+This file advertises the SSH service via mDNS/DNS-SD for easy discovery.
+Managed by Ansible - local changes will be overwritten.
+
+Clients can discover SSH services using:
+  avahi-browse -r _ssh._tcp
+=============================================================================
+-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">SSH on %h</name>
+
+  <service>
+    <type>_ssh._tcp</type>
+    <port>22</port>
+    <txt-record>user={{ ansible_user | default('julian') }}</txt-record>
+{% if 'control_plane' in group_names %}
+    <txt-record>role=control-plane</txt-record>
+{% else %}
+    <txt-record>role=worker</txt-record>
+    <txt-record>arch={{ node_arch | default('arm64') }}</txt-record>
+{% endif %}
+    <txt-record>cluster={{ cluster_name | default('rpi-k8s-cluster') }}</txt-record>
+  </service>
+</service-group>

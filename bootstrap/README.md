@@ -7,27 +7,40 @@ This directory contains scripts and configuration files for preparing cluster no
 Before installing k3s, each node needs to be configured with:
 - Disabled swap (Kubernetes requirement)
 - Enabled cgroups (memory and cpuset)
-- Required packages
+- Required packages (including Avahi for mDNS)
 - Network configuration
 - Firewall rules
 - External storage (optional but recommended)
+
+## Key Features
+
+- **mDNS Discovery**: Automatic node discovery without static IP addresses
+- **Auto-Start Services**: k3s starts automatically on boot
+- **Health Monitoring**: Continuous cluster health checks with recovery
+- **Dynamic IP Support**: Handles IP address changes via mDNS resolution
 
 ## Directory Structure
 
 ```
 bootstrap/
 ├── configs/
-│   ├── node-common.yaml      # Shared configuration values
-│   ├── control-plane.yaml    # Ubuntu desktop control plane config
-│   └── worker-rpi5.yaml      # Raspberry Pi 5 worker template
+│   ├── node-common.yaml         # Shared configuration values
+│   ├── control-plane.yaml       # Ubuntu desktop control plane config
+│   └── worker-rpi5.yaml         # Raspberry Pi 5 worker template
 ├── scripts/
-│   ├── prep-existing-os.sh   # Prep script for existing OS installations
-│   ├── port-to-rpi.ps1       # PowerShell script to transfer and run prep scripts
-│   ├── prepare-rpi.sh        # Bootstrap script for RPi5 nodes
-│   ├── prepare-ubuntu.sh     # Bootstrap script for Ubuntu control plane
-│   ├── discover-nodes.ps1    # Network discovery for Raspberry Pi nodes
-│   ├── bootstrap-cluster.ps1 # Windows-native bootstrap orchestrator
-│   └── diagnose-cluster.ps1  # Cluster diagnostics and troubleshooting
+│   ├── prep-existing-os.sh      # Prep script for existing OS installations
+│   ├── port-to-rpi.ps1          # PowerShell script to transfer and run prep scripts
+│   ├── prepare-rpi.sh           # Bootstrap script for RPi5 nodes
+│   ├── prepare-ubuntu.sh        # Bootstrap script for Ubuntu control plane
+│   ├── discover-nodes.ps1       # PowerShell network/mDNS discovery
+│   ├── discover_cluster.py      # Python mDNS discovery with fallback
+│   ├── cluster_registry.py      # Node registry with health tracking
+│   ├── cluster_health_monitor.py # Health monitoring daemon
+│   ├── k3s-health-check.sh      # Health check script for systemd
+│   ├── k3s-agent-recovery.sh    # Worker node recovery script
+│   ├── bootstrap_cluster.py     # Python bootstrap with discovery integration
+│   ├── bootstrap-cluster.ps1    # Windows-native bootstrap orchestrator
+│   └── diagnose-cluster.ps1     # Cluster diagnostics and troubleshooting
 └── README.md
 ```
 
@@ -37,7 +50,17 @@ bootstrap/
 
 If you have Raspberry Pi OS already flashed to your SD cards **without** the `julian` user configured, you need to prepare the OS first before running `prepare-rpi.sh`.
 
-**Option A: Automated (Windows Workstation)**
+**Option A: Automated with Discovery (Windows - Recommended)**
+
+```powershell
+# Auto-discover nodes and prepare them (no IP addresses needed)
+.\bootstrap\scripts\port-to-rpi.ps1 -Discover -AuthMethod "password" -DefaultUser "pi"
+
+# Or use mDNS hostnames directly (after initial Avahi install)
+.\bootstrap\scripts\port-to-rpi.ps1 -UseMDNS -Hostnames "rpi1,rpi2,rpi3,rpi4" -AuthMethod "password"
+```
+
+**Option B: Automated with IP Addresses (Windows)**
 
 ```powershell
 # From your workstation, run the port-to-rpi script
@@ -54,10 +77,21 @@ If you have Raspberry Pi OS already flashed to your SD cards **without** the `ju
     -DefaultUser "pi"
 ```
 
+**Option C: Python Bootstrap with Discovery**
+
+```bash
+# Discover and bootstrap all nodes
+python bootstrap/scripts/bootstrap_cluster.py --discover --bootstrap-only
+
+# Or use existing cluster-config.yaml
+python bootstrap/scripts/bootstrap_cluster.py --config cluster-config.yaml
+```
+
 This script will:
 1. Copy `prep-existing-os.sh` to each Pi
 2. Run it to create `julian` user and install prerequisites
-3. Copy `prepare-rpi.sh` to each Pi (to `julian` user's home)
+3. Install Avahi for mDNS discovery
+4. Copy `prepare-rpi.sh` to each Pi (to `julian` user's home)
 
 **Option B: Manual (Single Node)**
 
@@ -208,14 +242,94 @@ PowerShell script for Windows workstations to automate transferring and running 
 
 ### discover-nodes.ps1
 
-Network discovery script that scans the local network for Raspberry Pi nodes.
+PowerShell script that discovers nodes via mDNS or network scan.
 
 | Parameter | Description |
 |-----------|-------------|
+| `-Method` | Discovery method: `auto`, `mdns`, or `scan` (default: `auto`) |
 | `-NetworkRange` | Network range to scan (default: auto-detect) |
 | `-HostnamePattern` | Hostname pattern to match (default: `rpi*`) |
-| `-OutputFormat` | Output format: `table`, `json`, or `hosts` |
-| `-Verbose` | Show detailed progress during scan |
+| `-Hostnames` | Specific hostnames to resolve via mDNS |
+| `-ControlPlane` | Control plane hostname (default: `k8s-control`) |
+| `-OutputFormat` | Output format: `table`, `json`, `hosts`, or `config` |
+| `-CheckServices` | Also check SSH and k3s port availability |
+| `-UpdateConfig` | Update cluster-config.yaml with discovered IPs |
+| `-IncludeControlPlane` | Include control plane in discovery |
+| `-Verbose` | Show detailed progress |
+
+**Examples:**
+
+```powershell
+# Auto-discover using mDNS with network scan fallback
+.\discover-nodes.ps1 -Method auto
+
+# mDNS-only discovery
+.\discover-nodes.ps1 -Method mdns -Hostnames "rpi1,rpi2,rpi3,rpi4"
+
+# Network scan discovery
+.\discover-nodes.ps1 -Method scan -NetworkRange "192.168.12.0/24"
+
+# Update cluster config with discovered IPs
+.\discover-nodes.ps1 -UpdateConfig
+```
+
+### discover_cluster.py
+
+Python discovery script with mDNS primary and network scan fallback.
+
+| Parameter | Description |
+|-----------|-------------|
+| `--method` | Discovery method: `auto`, `mdns`, or `scan` |
+| `--hostnames` | Comma-separated list of worker hostnames |
+| `--control-plane` | Control plane hostname |
+| `--network` | Network range for scanning |
+| `--output` | Output format: `table`, `json`, `yaml`, or `hosts` |
+| `--update-config` | Update cluster-config.yaml with discovered IPs |
+| `--no-cache` | Disable caching |
+| `--clear-cache` | Clear discovery cache |
+| `--verbose` | Verbose output |
+
+**Examples:**
+
+```bash
+# Auto-discover nodes
+python discover_cluster.py --verbose
+
+# mDNS discovery
+python discover_cluster.py --method mdns --hostnames rpi1,rpi2,rpi3,rpi4
+
+# Update config file
+python discover_cluster.py --update-config --config ../cluster-config.yaml
+
+# JSON output
+python discover_cluster.py --output json
+```
+
+### cluster_health_monitor.py
+
+Health monitoring daemon for cluster nodes.
+
+| Parameter | Description |
+|-----------|-------------|
+| `--daemon` | Run as background daemon |
+| `--check-once` | Run single health check |
+| `--status` | Show daemon status |
+| `--config` | Path to cluster-config.yaml |
+| `--interval` | Check interval in seconds |
+| `--output` | Output format: `text` or `json` |
+
+**Examples:**
+
+```bash
+# Run single health check
+python cluster_health_monitor.py --check-once
+
+# Run as daemon
+python cluster_health_monitor.py --daemon --interval 60
+
+# Check daemon status
+python cluster_health_monitor.py --status
+```
 
 ### bootstrap-cluster.ps1
 
@@ -275,15 +389,17 @@ Prepares Raspberry Pi nodes with existing OS installations for the bootstrap pro
 
 1. **System Update**: Updates all packages to latest versions
 2. **Hostname**: Sets the system hostname
-3. **Static IP**: Configures static IP via dhcpcd
+3. **Static IP**: Configures static IP via dhcpcd (optional with mDNS)
 4. **Swap**: Disables swap completely (required by Kubernetes)
 5. **cgroups**: Enables memory and cpuset cgroups in cmdline.txt
 6. **64-bit Kernel**: Ensures 64-bit mode is enabled
-7. **Packages**: Installs nfs-common, open-iscsi, jq, etc.
-8. **Kernel Params**: Configures sysctl for Kubernetes networking
-9. **External Storage**: Partitions, formats, and mounts USB SSD
-10. **Firewall**: Configures UFW with required ports
-11. **Power Saving**: Disables WiFi and Bluetooth
+7. **Packages**: Installs nfs-common, open-iscsi, jq, avahi-daemon, etc.
+8. **mDNS/Avahi**: Configures hostname.local resolution
+9. **Kernel Params**: Configures sysctl for Kubernetes networking
+10. **External Storage**: Partitions, formats, and mounts USB SSD
+11. **Firewall**: Configures UFW with required ports (including mDNS port 5353)
+12. **Power Saving**: Disables WiFi and Bluetooth
+13. **k3s Agent Recovery**: Installs service for reconnection after IP changes
 
 ### Ubuntu Script (prepare-ubuntu.sh)
 
@@ -332,7 +448,78 @@ sudo ufw status
 # Should show active with allowed ports
 ```
 
+### Check mDNS/Avahi
+```bash
+# Check Avahi service
+sudo systemctl status avahi-daemon
+
+# Test mDNS resolution
+avahi-resolve -n rpi1.local
+ping rpi2.local
+
+# Browse advertised services
+avahi-browse -a
+
+# Check mDNS firewall rule
+sudo ufw status | grep 5353
+```
+
+### Check auto-start services (control plane)
+```bash
+# Check k3s server startup service
+sudo systemctl status k3s-server-startup.service
+
+# Check health monitoring
+sudo systemctl status k3s-cluster-health.timer
+
+# View health check logs
+sudo journalctl -u k3s-cluster-health -f
+```
+
+### Check recovery service (workers)
+```bash
+# Check agent recovery service
+sudo systemctl status k3s-agent-recovery.service
+
+# View recovery logs
+sudo journalctl -u k3s-agent-recovery -f
+```
+
 ## Troubleshooting
+
+### mDNS hostname.local not resolving
+```bash
+# Check Avahi is running
+sudo systemctl status avahi-daemon
+
+# Restart Avahi
+sudo systemctl restart avahi-daemon
+
+# Check nsswitch.conf has mdns
+grep hosts /etc/nsswitch.conf
+# Should include: mdns4_minimal [NOTFOUND=return] dns mdns4
+
+# Check firewall allows mDNS
+sudo ufw allow 5353/udp
+
+# Test from another node
+avahi-resolve -n hostname.local
+```
+
+### IP address changed and cluster is disconnected
+```bash
+# On control plane - rediscover nodes
+python bootstrap/scripts/discover_cluster.py --update-config
+
+# The health monitor should auto-detect changes
+sudo journalctl -u k3s-cluster-health -f
+
+# On workers - the recovery service handles reconnection
+sudo journalctl -u k3s-agent-recovery -f
+
+# Force rediscovery
+python bootstrap/scripts/cluster_health_monitor.py --check-once
+```
 
 ### cgroups not enabled
 Edit `/boot/firmware/cmdline.txt` (or `/boot/cmdline.txt` on older OS) and add:

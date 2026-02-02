@@ -1,0 +1,56 @@
+<?xml version="1.0" standalone='no'?>
+<!--
+=============================================================================
+Avahi Service Definition: k3s Kubernetes
+=============================================================================
+This file advertises the k3s Kubernetes API service via mDNS/DNS-SD.
+Managed by Ansible - local changes will be overwritten.
+
+Service types:
+- _k3s._tcp: k3s API server (control plane only)
+- _kubernetes._tcp: Generic Kubernetes API
+
+Clients can discover the API server using:
+  avahi-browse -r _k3s._tcp
+  avahi-browse -r _kubernetes._tcp
+=============================================================================
+-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">k3s on %h</name>
+
+{% if 'control_plane' in group_names %}
+  <!-- k3s API Server (control plane only) -->
+  <service>
+    <type>_k3s._tcp</type>
+    <port>6443</port>
+    <txt-record>version={{ k3s_version | default('v1.29.0+k3s1') }}</txt-record>
+    <txt-record>role=server</txt-record>
+    <txt-record>cluster={{ cluster_name | default('rpi-k8s-cluster') }}</txt-record>
+  </service>
+
+  <service>
+    <type>_kubernetes._tcp</type>
+    <port>6443</port>
+    <txt-record>version={{ k3s_version | default('v1.29.0+k3s1') }}</txt-record>
+    <txt-record>role=control-plane</txt-record>
+  </service>
+{% else %}
+  <!-- k3s Agent (worker nodes) -->
+  <service>
+    <type>_k3s-agent._tcp</type>
+    <port>10250</port>
+    <txt-record>version={{ k3s_version | default('v1.29.0+k3s1') }}</txt-record>
+    <txt-record>role=agent</txt-record>
+    <txt-record>arch={{ node_arch | default('arm64') }}</txt-record>
+    <txt-record>cluster={{ cluster_name | default('rpi-k8s-cluster') }}</txt-record>
+  </service>
+{% endif %}
+
+  <!-- Kubelet API (all nodes) -->
+  <service>
+    <type>_kubelet._tcp</type>
+    <port>10250</port>
+    <txt-record>node=%h</txt-record>
+  </service>
+</service-group>

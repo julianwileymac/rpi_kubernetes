@@ -1,25 +1,30 @@
 # =============================================================================
 # Raspberry Pi Port-to-Pi Script (PowerShell)
 # =============================================================================
-# Version: 1.0.0
+# Version: 2.0.0
 #
 # Transfers and executes the prep-existing-os.sh and prepare-rpi.sh scripts
 # to Raspberry Pi nodes with existing OS installations.
 #
+# Now includes mDNS discovery support for environments without static IPs.
+#
 # Usage:
+#   .\port-to-rpi.ps1 -Discover -AuthMethod "password"
 #   .\port-to-rpi.ps1 -Hosts "rpi1=192.168.1.101,rpi2=192.168.1.102" -SshKey "~\.ssh\id_ed25519"
-#   .\port-to-rpi.ps1 -Hosts @("rpi1=192.168.1.101","rpi2=192.168.1.102") -Interactive
+#   .\port-to-rpi.ps1 -UseMDNS -Hostnames "rpi1,rpi2,rpi3,rpi4" -RunBootstrap
 #
 # Prerequisites:
 #   - PowerShell 5.1 or later
 #   - SSH access to Raspberry Pi nodes (default user, usually 'pi')
 #   - Network connectivity to all Pi nodes
+#   - For mDNS: Avahi/Bonjour on target nodes (installed during prep)
 #
 # What this script does:
-#   1. Copies prep-existing-os.sh to each Pi node
-#   2. Runs prep-existing-os.sh to create 'julian' user and install prerequisites
-#   3. Copies prepare-rpi.sh to each Pi node (to julian user's home)
-#   4. Provides next steps for running prepare-rpi.sh
+#   1. Optionally discovers nodes via mDNS or network scan
+#   2. Copies prep-existing-os.sh to each Pi node
+#   3. Runs prep-existing-os.sh to create 'julian' user and install prerequisites
+#   4. Copies prepare-rpi.sh to each Pi node (to julian user's home)
+#   5. Optionally runs the bootstrap script
 # =============================================================================
 
 param(
@@ -47,6 +52,12 @@ param(
     
     [Parameter(Mandatory=$false)]
     [switch]$Discover = $false,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$UseMDNS = $false,
+    
+    [Parameter(Mandatory=$false)]
+    [string[]]$Hostnames = @("rpi1", "rpi2", "rpi3", "rpi4"),
     
     [Parameter(Mandatory=$false)]
     [string]$NetworkRange = "",
@@ -100,6 +111,75 @@ if (-not (Test-Path $BootstrapScript)) {
 if (-not (Test-Path $StorageHelperScript)) {
     Write-Error "mount-external-storage.sh not found at: $StorageHelperScript"
     exit 1
+}
+
+# =============================================================================
+# mDNS Resolution Functions
+# =============================================================================
+
+function Resolve-MDNSHostname {
+    param([string]$Hostname)
+    
+    $fqdn = if ($Hostname.EndsWith(".local")) { $Hostname } else { "$Hostname.local" }
+    
+    # Method 1: Resolve-DnsName (Windows 10+)
+    try {
+        $result = Resolve-DnsName -Name $fqdn -Type A -DnsOnly -ErrorAction Stop 2>$null
+        if ($result -and $result.IPAddress) {
+            return $result.IPAddress | Select-Object -First 1
+        }
+    } catch { }
+    
+    # Method 2: Standard DNS
+    try {
+        $result = [System.Net.Dns]::GetHostAddresses($fqdn) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | Select-Object -First 1
+        if ($result) {
+            return $result.IPAddressToString
+        }
+    } catch { }
+    
+    return $null
+}
+
+# =============================================================================
+# Discovery Integration
+# =============================================================================
+
+# If -Discover is specified, run discovery script
+if ($Discover -and $Hosts.Count -eq 0) {
+    Write-Info "Running node discovery..."
+    
+    $discoverArgs = @("-OutputFormat", "hosts")
+    if ($NetworkRange) {
+        $discoverArgs += @("-NetworkRange", $NetworkRange)
+    }
+    
+    try {
+        $discoveredOutput = & $DiscoverScript @discoverArgs
+        if ($LASTEXITCODE -eq 0 -and $discoveredOutput) {
+            $Hosts = $discoveredOutput -split "`n" | Where-Object { $_ -match "=" }
+            Write-Success "Discovered $($Hosts.Count) node(s)"
+        } else {
+            Write-Warning "Discovery returned no results, specify hosts manually"
+        }
+    } catch {
+        Write-Warning "Discovery failed: $_"
+    }
+}
+
+# If -UseMDNS is specified, resolve hostnames via mDNS
+if ($UseMDNS -and $Hosts.Count -eq 0) {
+    Write-Info "Resolving hostnames via mDNS..."
+    
+    foreach ($hostname in $Hostnames) {
+        $ip = Resolve-MDNSHostname -Hostname $hostname
+        if ($ip) {
+            $Hosts += "$hostname=$ip"
+            Write-Success "  $hostname -> $ip"
+        } else {
+            Write-Warning "  Failed to resolve: $hostname"
+        }
+    }
 }
 
 # Parse SSH key path

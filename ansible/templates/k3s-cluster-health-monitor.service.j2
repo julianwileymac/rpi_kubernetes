@@ -1,0 +1,48 @@
+[Unit]
+Description=k3s Cluster Health Monitor Daemon
+Documentation=https://github.com/your-repo/rpi_kubernetes
+# Long-running daemon that monitors cluster health and handles recovery
+
+After=network-online.target k3s.service
+Wants=network-online.target
+Requires=k3s.service
+
+[Service]
+Type=simple
+
+# Health monitor daemon
+ExecStart=/usr/bin/python3 /usr/local/bin/cluster_health_monitor.py --daemon --interval {{ health_monitor_interval | default(60) }} --config {{ cluster_config_path | default('/home/julia/rpi_kubernetes/cluster-config.yaml') }}
+
+# Restart configuration
+Restart=always
+RestartSec=30
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+{% if external_storage_mount is defined %}
+Environment="STORAGE_MOUNT={{ external_storage_mount }}"
+{% endif %}
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=20%
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log /var/run {{ ansible_env.HOME }}/.rpi-cluster
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=k3s-health-monitor
+
+# User context
+User=root
+
+[Install]
+WantedBy=multi-user.target

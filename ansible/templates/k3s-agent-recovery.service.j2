@@ -1,0 +1,35 @@
+[Unit]
+Description=k3s Agent Recovery and Reconnection Service
+Documentation=https://github.com/your-repo/rpi_kubernetes
+# Monitors k3s-agent health and handles reconnection to control plane
+# Especially useful for dynamic IP environments where control plane IP may change
+
+After=network-online.target avahi-daemon.service
+Wants=network-online.target avahi-daemon.service
+BindsTo=k3s-agent.service
+
+[Service]
+Type=simple
+
+# Recovery script
+ExecStart=/usr/local/bin/k3s-agent-recovery.sh
+
+# Restart on failure
+Restart=always
+RestartSec=30
+StartLimitInterval=600
+StartLimitBurst=5
+
+# Environment
+Environment="CONTROL_PLANE_HOSTNAME={{ control_plane_hostname | default('k8s-control') }}"
+Environment="K3S_TOKEN_FILE=/etc/rancher/k3s/k3s-token"
+Environment="CHECK_INTERVAL={{ agent_recovery_interval | default(30) }}"
+Environment="MAX_RETRIES={{ agent_recovery_max_retries | default(5) }}"
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=k3s-agent-recovery
+
+[Install]
+WantedBy=multi-user.target

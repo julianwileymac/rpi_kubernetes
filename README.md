@@ -31,6 +31,8 @@ A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu de
 - **Management Framework** - Python FastAPI backend + Next.js control panel
 - **OpenTelemetry** - Distributed tracing and observability
 - **Ansible Automation** - Reproducible cluster provisioning
+- **mDNS Discovery** - Automatic node discovery without static IPs (Avahi/Bonjour)
+- **Auto-Start & Recovery** - k3s services start automatically with health monitoring
 
 ## Quick Start
 
@@ -68,18 +70,37 @@ See [docs/raspberry-pi-setup.md](docs/raspberry-pi-setup.md) for detailed imagin
 
 1. Insert SD card, connect USB SSD, Ethernet, then power
 2. Wait 1-2 minutes for boot
-3. Find the IP address via router or `nmap -sn 192.168.1.0/24`
-4. Test SSH: `ssh julian@<ip-address>`
+3. Connect using mDNS hostname (recommended) or find IP via router
 
-**Recommended Static IPs:**
+**Automatic Discovery (No Static IPs Required):**
 
-| Node | Hostname | IP Address |
-|------|----------|------------|
-| Control Plane | k8s-control | 192.168.1.100 |
-| Worker 1 | rpi1 | 192.168.1.101 |
-| Worker 2 | rpi2 | 192.168.1.102 |
-| Worker 3 | rpi3 | 192.168.1.103 |
-| Worker 4 | rpi4 | 192.168.1.104 |
+With mDNS/Avahi enabled (installed during bootstrap), nodes are accessible by hostname:
+
+```bash
+# Connect via hostname.local (no need to know IP address)
+ssh julian@rpi1.local
+ssh julian@rpi2.local
+ssh julian@k8s-control.local
+
+# Discover all nodes automatically
+.\bootstrap\scripts\discover-nodes.ps1 -Method auto
+python bootstrap/scripts/discover_cluster.py --verbose
+```
+
+**Manual Discovery (if mDNS not available):**
+```bash
+# Find IP via router admin page, or scan network
+nmap -sn 192.168.1.0/24
+ping rpi1.local  # Works after Avahi is installed
+```
+
+| Node | Hostname | mDNS Address |
+|------|----------|--------------|
+| Control Plane | k8s-control | k8s-control.local |
+| Worker 1 | rpi1 | rpi1.local |
+| Worker 2 | rpi2 | rpi2.local |
+| Worker 3 | rpi3 | rpi3.local |
+| Worker 4 | rpi4 | rpi4.local |
 
 ### Step 3: Configure Ansible Inventory
 
@@ -98,16 +119,19 @@ nano ansible/inventory/cluster.yml
 **Windows Users - PowerShell (Recommended):**
 
 ```powershell
-# Auto-discover and bootstrap all nodes
+# Auto-discover and bootstrap all nodes using mDNS
 .\bootstrap\scripts\port-to-rpi.ps1 -Discover -RunBootstrap -AuthMethod "password"
 
-# Bootstrap control plane
-.\bootstrap\scripts\bootstrap-cluster.ps1 -ControlPlane "ubuntu@192.168.1.100"
+# Or use mDNS hostnames directly (no IP addresses needed)
+.\bootstrap\scripts\port-to-rpi.ps1 -UseMDNS -Hostnames "rpi1,rpi2,rpi3,rpi4" -RunBootstrap
 
-# Verify with diagnostics
+# Bootstrap using Python script with discovery
+python bootstrap/scripts/bootstrap_cluster.py --discover --bootstrap-only
+
+# Verify with diagnostics (using mDNS hostnames)
 .\bootstrap\scripts\diagnose-cluster.ps1 `
-    -ControlPlane "ubuntu@192.168.1.100" `
-    -Workers @("julian@192.168.1.101","julian@192.168.1.102","julian@192.168.1.103","julian@192.168.1.104")
+    -ControlPlane "julia@k8s-control.local" `
+    -Workers @("julian@rpi1.local","julian@rpi2.local","julian@rpi3.local","julian@rpi4.local")
 ```
 
 **Linux/Mac/WSL Users - Ansible:**
@@ -124,10 +148,12 @@ ansible all -i ansible/inventory/cluster.yml -m ping
 The bootstrap process:
 - Disables swap (required by Kubernetes)
 - Enables memory cgroups in kernel
-- Installs required packages
+- Installs required packages (including Avahi for mDNS)
 - Configures external USB storage (auto-detects and mounts USB drives)
 - Sets up firewall rules
 - Installs systemd service for automatic drive mounting on boot
+- Configures mDNS/Avahi for service discovery
+- Installs k3s auto-start and health monitoring services
 
 ### Step 5: Install k3s Cluster
 
@@ -139,8 +165,11 @@ ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/k3s-install.
 ### Step 6: Configure kubectl
 
 ```bash
-# Get kubeconfig from control plane
-scp ubuntu@192.168.1.100:~/.kube/config ~/.kube/config-rpi-cluster
+# Get kubeconfig from control plane (using mDNS hostname)
+scp julia@k8s-control.local:~/.kube/config ~/.kube/config-rpi-cluster
+
+# Or if bootstrap_cluster.py was used, kubeconfig is already saved locally
+# The kubeconfig uses k8s-control.local for resilience to IP changes
 
 # Set as default or use with flag
 export KUBECONFIG=~/.kube/config-rpi-cluster
@@ -286,10 +315,43 @@ See [docs/extending-framework.md](docs/extending-framework.md) for:
 
 ### Common Issues
 
+**mDNS/hostname.local not resolving:**
+```bash
+# On the node - check Avahi is running
+sudo systemctl status avahi-daemon
+
+# Restart Avahi if needed
+sudo systemctl restart avahi-daemon
+
+# Test mDNS locally
+avahi-resolve -n rpi1.local
+
+# On Windows - verify mDNS resolution
+Resolve-DnsName -Name rpi1.local -Type A
+
+# Check firewall allows mDNS (UDP port 5353)
+sudo ufw status | grep 5353
+```
+
+**IP address changed (dynamic IP environment):**
+```bash
+# Rediscover nodes and update config
+python bootstrap/scripts/discover_cluster.py --update-config
+
+# Or on Windows
+.\bootstrap\scripts\discover-nodes.ps1 -Method auto -UpdateConfig
+
+# Check health monitor detected the change
+sudo journalctl -u k3s-cluster-health -f
+```
+
 **Nodes not joining cluster:**
 ```bash
 # Check k3s agent logs on worker
 sudo journalctl -u k3s-agent -f
+
+# If control plane IP changed, the agent recovery service should reconnect
+sudo journalctl -u k3s-agent-recovery -f
 ```
 
 **Storage issues:**

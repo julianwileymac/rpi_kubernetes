@@ -1,0 +1,67 @@
+[Unit]
+Description=k3s Server Startup Service
+Documentation=https://k3s.io
+# This service ensures k3s server starts properly after boot
+# It handles dependencies and provides retry logic
+
+# Wait for network to be fully up
+After=network-online.target
+Wants=network-online.target
+
+# Wait for storage if configured
+{% if external_storage_mount is defined %}
+After=mount-external-drive.service
+Wants=mount-external-drive.service
+{% endif %}
+
+# Wait for Avahi (mDNS) for service discovery
+After=avahi-daemon.service
+Wants=avahi-daemon.service
+
+# Must start before k3s
+Before=k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Pre-start checks
+ExecStartPre=/bin/bash -c 'echo "Checking network connectivity..."'
+ExecStartPre=/bin/bash -c 'for i in 1 2 3 4 5; do ping -c1 -W2 {{ network_gateway | default("192.168.1.1") }} && break || sleep 2; done'
+
+{% if external_storage_mount is defined %}
+# Verify storage is mounted
+ExecStartPre=/bin/bash -c 'mountpoint -q {{ external_storage_mount }} || echo "Warning: Storage not mounted"'
+{% endif %}
+
+# Verify mDNS is working
+ExecStartPre=/bin/bash -c 'avahi-daemon --check 2>/dev/null || echo "Warning: Avahi not running"'
+
+# Main startup command - enables k3s service
+ExecStart=/bin/systemctl start k3s.service
+
+# Post-start verification
+ExecStartPost=/bin/bash -c 'sleep 10 && kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes || true'
+
+# Log startup completion
+ExecStartPost=/bin/bash -c 'echo "k3s server startup sequence completed"'
+
+# Restart configuration
+Restart=on-failure
+RestartSec=30
+StartLimitInterval=300
+StartLimitBurst=3
+
+# Timeouts
+TimeoutStartSec=300
+
+# Environment
+Environment="KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

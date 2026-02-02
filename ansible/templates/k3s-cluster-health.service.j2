@@ -1,0 +1,35 @@
+[Unit]
+Description=k3s Cluster Health Check Service
+Documentation=https://github.com/your-repo/rpi_kubernetes
+# Performs health checks on the k3s cluster and all nodes
+# Triggered by k3s-cluster-health.timer
+
+After=k3s.service
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+
+# Health check script
+ExecStart=/usr/local/bin/k3s-health-check.sh
+
+# Environment
+Environment="KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+{% if cluster_config_path is defined %}
+Environment="CLUSTER_CONFIG={{ cluster_config_path }}"
+{% endif %}
+
+# Timeout for health check
+TimeoutStartSec=120
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=k3s-health
+
+# User context (can run as root or specific user)
+User=root
+
+[Install]
+WantedBy=multi-user.target

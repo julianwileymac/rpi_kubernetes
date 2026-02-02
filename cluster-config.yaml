@@ -93,3 +93,26 @@ storage:
     - postgresql
     - minio
     - jupyterhub
+
+# =============================================================================
+# Service Discovery Configuration
+# =============================================================================
+# For environments without static IP support, enable mDNS/Avahi discovery
+# to automatically find nodes by hostname.local
+discovery:
+  enabled: true
+  primary_method: mdns           # mdns, network_scan, or auto
+  mdns_domain: local
+  network_range: auto            # or explicit: 192.168.12.0/24
+  hostname_pattern: rpi*
+  cache_file: ~/.rpi-cluster/node-cache.json
+  cache_ttl: 3600                # seconds
+
+# =============================================================================
+# Health Monitoring Configuration
+# =============================================================================
+health_monitoring:
+  enabled: true
+  check_interval: 60             # seconds between health checks
+  max_consecutive_failures: 3    # failures before alerting
+  auto_update_ips: true          # update config when IPs change via mDNS

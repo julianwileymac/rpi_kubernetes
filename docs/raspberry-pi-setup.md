@@ -219,17 +219,47 @@ lsblk
 
 ## Network Setup
 
-### Option A: Static IP via DHCP Reservation (Recommended)
+### Option A: mDNS Discovery (Recommended - No Static IPs Required)
 
-Configure your router to always assign the same IP to each Raspberry Pi based on its MAC address. This is the cleanest approach.
+The bootstrap process installs Avahi/mDNS, which allows nodes to be accessed by hostname without configuring static IP addresses. This is ideal for:
+- Routers that don't support DHCP reservation
+- Dynamic IP environments
+- Simplified network management
+
+After bootstrap, nodes are accessible via `hostname.local`:
+
+```bash
+# Connect using mDNS hostname (works after bootstrap installs Avahi)
+ssh julian@rpi1.local
+ssh julian@rpi2.local
+ping k8s-control.local
+
+# Discover all nodes automatically
+python bootstrap/scripts/discover_cluster.py --verbose
+
+# On Windows
+.\bootstrap\scripts\discover-nodes.ps1 -Method auto
+```
+
+**How it works:**
+1. Bootstrap installs `avahi-daemon` on all nodes
+2. Each node advertises its hostname via mDNS
+3. Nodes resolve each other using `hostname.local`
+4. The cluster health monitor auto-updates config when IPs change
+
+### Option B: Static IP via DHCP Reservation (Optional)
+
+If your router supports it, you can configure DHCP reservation to assign consistent IPs:
 
 1. Log into your router
 2. Find DHCP reservation or static DHCP settings
 3. Add entries for each Pi's MAC address
 
-### Option B: Static IP on the Pi
+This is optional with mDNS enabled, but can be useful for external access.
 
-If you can't configure DHCP reservation, set a static IP on each Pi:
+### Option C: Static IP on the Pi (Legacy)
+
+Only use this if mDNS and DHCP reservation are not options:
 
 ```bash
 # SSH into the Pi
@@ -252,8 +282,6 @@ sudo reboot
 
 ### Verify Network Configuration
 
-After setting static IP:
-
 ```bash
 # Check IP address
 ip addr show eth0
@@ -266,6 +294,27 @@ ping -c 3 8.8.8.8
 
 # Test DNS resolution
 ping -c 3 google.com
+
+# Test mDNS resolution (after bootstrap)
+ping -c 3 rpi1.local
+avahi-resolve -n rpi2.local
+```
+
+### Troubleshooting mDNS
+
+```bash
+# Check Avahi is running
+sudo systemctl status avahi-daemon
+
+# Restart Avahi
+sudo systemctl restart avahi-daemon
+
+# Browse for services on network
+avahi-browse -a
+
+# Check firewall allows mDNS
+sudo ufw status | grep 5353
+# Should show: 5353/udp ALLOW Anywhere
 ```
 
 ---

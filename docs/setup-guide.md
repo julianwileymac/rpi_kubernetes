@@ -56,16 +56,29 @@ ansible-galaxy collection install kubernetes.core community.general ansible.posi
 
 1. Connect all nodes to the Gigabit switch
 2. Connect switch to your router
-3. Note the IP addresses assigned to each node
+3. Nodes will be discoverable via mDNS (hostname.local) after bootstrap
 
-**Recommended IP Scheme:**
-| Node | Hostname | IP Address |
-|------|----------|------------|
-| Ubuntu Desktop | k8s-control | 192.168.1.100 |
-| RPi5 Node 1 | rpi1 | 192.168.1.101 |
-| RPi5 Node 2 | rpi2 | 192.168.1.102 |
-| RPi5 Node 3 | rpi3 | 192.168.1.103 |
-| RPi5 Node 4 | rpi4 | 192.168.1.104 |
+**mDNS Discovery (Recommended - No Static IPs Required):**
+
+After bootstrapping, nodes are accessible by hostname without knowing their IP:
+
+| Node | Hostname | mDNS Address |
+|------|----------|--------------|
+| Ubuntu Desktop | k8s-control | k8s-control.local |
+| RPi5 Node 1 | rpi1 | rpi1.local |
+| RPi5 Node 2 | rpi2 | rpi2.local |
+| RPi5 Node 3 | rpi3 | rpi3.local |
+| RPi5 Node 4 | rpi4 | rpi4.local |
+
+```bash
+# After bootstrap, connect using mDNS hostname
+ssh julian@rpi1.local
+ping k8s-control.local
+```
+
+**Alternative: Static IP Reservation**
+
+If your router supports DHCP reservation, you can assign static IPs based on MAC address. This is optional with mDNS discovery enabled.
 
 ### 1.3 Connect External Storage
 
@@ -114,12 +127,22 @@ all:
 
 If you have Raspberry Pi OS already flashed **without** the `julian` user configured during imaging, you need to prepare the OS first.
 
-**Option A: Automated (Windows Workstation)**
+**Option A: Automated with Discovery (Windows Workstation - Recommended)**
 
 ```powershell
 # From your workstation
 cd C:\Users\Julian Wiley\Documents\GitHub\rpi_kubernetes
 
+# Auto-discover nodes and prepare them (no IP addresses needed)
+.\bootstrap\scripts\port-to-rpi.ps1 -Discover -AuthMethod "password" -DefaultUser "pi"
+
+# Or use mDNS hostnames directly
+.\bootstrap\scripts\port-to-rpi.ps1 -UseMDNS -Hostnames "rpi1,rpi2,rpi3,rpi4" -AuthMethod "password"
+```
+
+**Option B: Manual with IP addresses (Windows Workstation)**
+
+```powershell
 .\bootstrap\scripts\port-to-rpi.ps1 `
     -Hosts @(
         "rpi1=192.168.1.101",
