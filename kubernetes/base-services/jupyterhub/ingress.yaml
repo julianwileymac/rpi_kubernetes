@@ -7,11 +7,9 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "500m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    # WebSocket support for notebooks
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection "upgrade";
+    nginx.ingress.kubernetes.io/upstream-hash-by: $request_uri
+    nginx.ingress.kubernetes.io/websocket-services: jupyterhub
 spec:
   ingressClassName: nginx
   rules:
