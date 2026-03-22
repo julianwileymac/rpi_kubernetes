@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: ml-platform
 
 resources:
+  - secret.yaml
   - configmap.yaml
   - deployment.yaml
   - service.yaml

@@ -9,8 +9,11 @@ Loki is a horizontally scalable, highly available log aggregation system inspire
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-# Install Loki
-helm install loki grafana/loki \
+# Create/refresh MinIO credentials used by Loki chart values
+kubectl apply -f kubernetes/observability/loki/minio-secret.yaml
+
+# Install or upgrade Loki
+helm upgrade --install loki grafana/loki \
   --namespace observability \
   --create-namespace \
   -f values.yaml
@@ -20,9 +23,11 @@ helm install loki grafana/loki \
 
 This deployment uses:
 - **Single Binary Mode**: Appropriate for the RPi cluster size
-- **Filesystem Storage**: 20GB PVC for log retention
+- **MinIO Object Storage**: `loki-data` bucket in `minio.data-services.svc.cluster.local:9000`
 - **30-day Retention**: Configurable in `values.yaml`
-- **OTLP Gateway**: Enabled for OpenTelemetry log ingestion
+- **OpenTelemetry Collector Export**: Logs are pushed via Loki HTTP API (`/loki/api/v1/push`)
+
+`loki-data` is created automatically by the MinIO bootstrap job in `kubernetes/base-services/minio/bootstrap-buckets-job.yaml`.
 
 ## Access
 
@@ -40,7 +45,8 @@ Loki is automatically configured as a datasource in Grafana. You can query logs 
 
 ## OpenTelemetry Integration
 
-The OpenTelemetry Collector is configured to export logs to Loki via OTLP. Logs from all services are automatically collected and forwarded to Loki.
+The OpenTelemetry Collector is configured to export logs to Loki using Loki's push API endpoint.
+With the collector `filelog` receiver enabled, Kubernetes pod logs are collected from node log files and forwarded to Loki.
 
 ## Retention
 

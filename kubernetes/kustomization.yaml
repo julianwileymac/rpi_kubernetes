@@ -29,6 +29,7 @@ resources:
   - base-services/dask-ray/
   - base-services/management/
   - base-services/chromadb/
+  - base-services/datahub/
   
   # Observability stack
   - observability/otel-collector/
@@ -40,8 +41,9 @@ resources:
   - mlops/argo-workflows/
   - mlops/bentoml/
   
-  # Note: Prometheus/Grafana, Loki, Milvus deployed via Helm separately
-  # See respective README.md files for installation instructions
+  # Note: kube-prometheus-stack (Grafana/Prometheus), Loki, Milvus deployed via Helm separately.
+  # Loki: kubernetes/observability/loki/values.yaml + bootstrap/scripts/install-loki.sh
+  # Prometheus stack: kubernetes/observability/prometheus/values.yaml
 
 # ConfigMap generators (if needed)
 # configMapGenerator:

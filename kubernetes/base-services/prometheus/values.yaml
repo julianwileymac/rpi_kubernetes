@@ -2,7 +2,7 @@
 # kube-prometheus-stack Helm Values
 # =============================================================================
 # Install with:
-#   helm install prometheus prometheus-community/kube-prometheus-stack \
+#   helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
 #     --namespace observability --create-namespace -f values.yaml
 # =============================================================================
 
@@ -127,7 +127,7 @@ prometheus:
         scheme: http
         static_configs:
           - targets:
-              - minio.data-services:9000
+              - minio.data-services.svc.cluster.local:9000
 
   ingress:
     enabled: true

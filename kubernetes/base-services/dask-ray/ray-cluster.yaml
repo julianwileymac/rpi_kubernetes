@@ -4,7 +4,7 @@
 # Ray is deployed via the KubeRay operator. Install the operator first:
 #
 #   helm repo add kuberay https://ray-project.github.io/kuberay-helm/
-#   helm install kuberay-operator kuberay/kuberay-operator --namespace ml-platform
+#   helm upgrade --install kuberay-operator kuberay/kuberay-operator --namespace ml-platform
 #
 # Then apply this RayCluster resource.
 # =============================================================================

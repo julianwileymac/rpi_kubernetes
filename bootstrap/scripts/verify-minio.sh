@@ -344,7 +344,7 @@ display_access_info() {
         echo "  Console: http://$lb_ip:9001"
         echo "  API: http://$lb_ip:9000"
         echo ""
-        log_info "Default credentials: minioadmin / minioadmin"
+        log_info "Default credentials: minioadmin / minioadmin123"
     fi
     
     # ClusterIP access (for debugging)

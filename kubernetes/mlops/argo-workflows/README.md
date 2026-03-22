@@ -9,20 +9,19 @@ Argo Workflows is a Kubernetes-native workflow engine for orchestrating parallel
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
 
-# Create MinIO bucket for artifacts
-kubectl run -it --rm minio-client --image=minio/mc --restart=Never -- \
-  sh -c "mc alias set minio http://minio.data-services:9000 minioadmin minioadmin123 && \
-         mc mb --ignore-existing minio/argo-workflows && \
-         mc anonymous set download minio/argo-workflows"
+# Ensure MinIO credentials secret exists
+kubectl apply -f secret.yaml
 
-# Install Argo Workflows
-helm install argo-workflows argo/argo-workflows \
+# (Optional) manually create bucket if bootstrap job is not used
+kubectl run -it --rm minio-client --image=minio/mc --restart=Never -- \
+  sh -c "mc alias set minio http://minio.data-services.svc.cluster.local:9000 minioadmin minioadmin123 && \
+         mc mb --ignore-existing minio/argo-workflows"
+
+# Install or upgrade Argo Workflows
+helm upgrade --install argo-workflows argo/argo-workflows \
   --namespace mlops \
   --create-namespace \
   -f values.yaml
-
-# Create MinIO secret
-kubectl apply -f secret.yaml
 ```
 
 ## Access

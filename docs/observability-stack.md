@@ -46,10 +46,12 @@ rate(container_cpu_usage_seconds_total[5m])
 ### Loki
 
 Loki aggregates logs from all cluster services:
-- Receives logs via OpenTelemetry Collector (OTLP)
+- Receives logs from OpenTelemetry Collector via Loki push API
 - 30-day retention period
-- 20GB persistent storage
+- MinIO object storage backend (`loki-data` bucket)
 - Label-based indexing (efficient storage)
+
+The `loki-data` bucket is bootstrapped by `kubernetes/base-services/minio/bootstrap-buckets-job.yaml`.
 
 **Access**: `http://loki.local:3100`
 
@@ -106,11 +108,15 @@ Grafana provides unified dashboards for all observability data:
 
 The OpenTelemetry Collector runs as a DaemonSet on all nodes and:
 - Receives telemetry data via OTLP (gRPC/HTTP)
+- Collects pod logs from node log files
 - Processes and enriches telemetry
 - Routes to appropriate backends:
   - **Traces** → Jaeger
   - **Metrics** → Prometheus + VictoriaMetrics
   - **Logs** → Loki
+
+> Note: Prometheus/Grafana and Loki are deployed via Helm values in this repository.
+> `kubectl apply -k kubernetes/` does not install those charts automatically.
 
 ## Service Integration
 
@@ -194,7 +200,7 @@ In Grafana, you can:
 
 ```bash
 # Check Prometheus targets
-kubectl port-forward -n observability svc/prometheus-kube-prometheus-prometheus 9090:9090
+kubectl port-forward -n observability svc/prometheus-prometheus 9090:9090
 # Open http://localhost:9090/targets
 
 # Check ServiceMonitor
@@ -208,7 +214,7 @@ kubectl get servicemonitor -A
 kubectl logs -n observability -l app=otel-collector
 
 # Check Loki logs
-kubectl logs -n observability -l app=loki
+kubectl logs -n observability -l app.kubernetes.io/name=loki
 ```
 
 ### Traces Not Appearing in Jaeger
@@ -218,7 +224,7 @@ kubectl logs -n observability -l app=loki
 kubectl logs -n observability deployment/jaeger
 
 # Verify OTel Collector export
-kubectl logs -n observability -l app=otel-collector | grep jaeger
+kubectl logs -n observability -l app=otel-collector --tail=200
 ```
 
 ## Best Practices

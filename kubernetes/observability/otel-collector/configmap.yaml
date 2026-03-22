@@ -17,6 +17,16 @@ data:
             endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
+
+      # Collect Kubernetes container logs from node filesystem
+      filelog:
+        include:
+          - /var/log/pods/*/*/*.log
+        include_file_path: true
+        start_at: beginning
+        operators:
+          - id: container-parser
+            type: container
       
       # Prometheus receiver for scraping metrics
       prometheus:
@@ -41,6 +51,16 @@ data:
             include:
               match_type: regexp
               names: ['.*']
+      
+      # Kubernetes container logs (CRI / containerd)
+      filelog:
+        include:
+          - /var/log/pods/*/*/*.log
+        exclude:
+          - /var/log/pods/kube-system_*/*/*.log
+        start_at: end
+        operators:
+          - type: container
     
     processors:
       # Batch processor for efficient export
@@ -48,12 +68,38 @@ data:
         timeout: 5s
         send_batch_size: 1024
         send_batch_max_size: 2048
+
+      # Enrich telemetry with Kubernetes metadata
+      k8sattributes:
+        auth_type: serviceAccount
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.container.name
+            - k8s.node.name
       
       # Memory limiter to prevent OOM
       memory_limiter:
         check_interval: 1s
-        limit_mib: 256
-        spike_limit_mib: 64
+        limit_mib: 512
+        spike_limit_mib: 128
+      
+      # Resolve k8s metadata for pod logs (uses pod UID from filelog / container operator)
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        node_from_env_var: K8S_NODE_NAME
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.node.name
       
       # Resource processor to add cluster metadata
       resource:
@@ -71,6 +117,25 @@ data:
           - key: service.namespace
             from_attribute: k8s.namespace.name
             action: upsert
+      
+      # Span processor for Milvus trace enrichment
+      span:
+        name:
+          from_attributes: [db.system, db.operation]
+          separator: "/"
+      
+      # Attributes for vector-db spans (Milvus, ChromaDB)
+      attributes/vectordb:
+        actions:
+          - key: vectordb.cluster
+            value: rpi-k8s-cluster
+            action: upsert
+          - key: vectordb.namespace
+            from_attribute: k8s.namespace.name
+            action: upsert
+          - key: trace.source
+            value: milvus-standalone
+            action: insert
     
     exporters:
       # Jaeger exporter for traces
@@ -94,14 +159,11 @@ data:
       # Loki exporter for logs
       loki:
         endpoint: http://loki.observability:3100/loki/api/v1/push
-        labels:
-          resource:
-            cluster.name: "rpi-k8s-cluster"
-            deployment.environment: "development"
-          attributes:
-            k8s.namespace.name: "k8s.namespace.name"
-            k8s.pod.name: "k8s.pod.name"
-            k8s.container.name: "k8s.container.name"
+        default_labels_enabled:
+          exporter: true
+          job: true
+          instance: true
+          level: true
       
       # Debug logging (reduce in production)
       logging:
@@ -129,7 +191,7 @@ data:
         # Traces pipeline
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, resource, attributes, batch]
+          processors: [memory_limiter, resource, attributes, attributes/vectordb, span, batch]
           exporters: [otlp/jaeger, logging]
         
         # Metrics pipeline - export to both Prometheus and VictoriaMetrics
@@ -138,10 +200,10 @@ data:
           processors: [memory_limiter, resource, batch]
           exporters: [prometheus, prometheusremotewrite/victoriametrics, logging]
         
-        # Logs pipeline - export to Loki
+        # Logs pipeline - OTLP + Kubernetes container logs to Loki
         logs:
-          receivers: [otlp]
-          processors: [memory_limiter, resource, attributes, batch]
+          receivers: [otlp, filelog]
+          processors: [memory_limiter, k8sattributes, resource, attributes, batch]
           exporters: [loki, logging]
       
       telemetry:

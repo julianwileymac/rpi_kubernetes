@@ -41,6 +41,12 @@ spec:
             - name: config
               mountPath: /etc/otel
               readOnly: true
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: varlogcontainers
+              mountPath: /var/log/containers
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -64,6 +70,14 @@ spec:
         - name: config
           configMap:
             name: otel-collector-config
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+            type: DirectoryOrCreate
+        - name: varlogcontainers
+          hostPath:
+            path: /var/log/containers
+            type: DirectoryOrCreate
       # Run on all nodes including control plane
       tolerations:
         - key: node-role.kubernetes.io/control-plane
@@ -82,7 +96,7 @@ metadata:
   name: otel-collector
 rules:
   - apiGroups: [""]
-    resources: ["pods", "nodes", "nodes/metrics", "services", "endpoints"]
+    resources: ["pods", "nodes", "nodes/metrics", "services", "endpoints", "namespaces"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["configmaps"]

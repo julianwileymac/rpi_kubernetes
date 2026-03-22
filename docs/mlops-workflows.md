@@ -140,7 +140,7 @@ Workflows store artifacts in MinIO:
       - name: model
         path: /workspace/model.pkl
         s3:
-          endpoint: minio.data-services:9000
+          endpoint: minio.data-services.svc.cluster.local:9000
           bucket: argo-workflows
           key: models/{{workflow.name}}/model.pkl
           accessKeySecret:

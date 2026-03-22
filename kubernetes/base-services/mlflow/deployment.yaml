@@ -12,33 +12,57 @@ spec:
     metadata:
       labels:
         app: mlflow
+        app.kubernetes.io/name: mlflow
+        app.kubernetes.io/component: ml-tracking
+        app.kubernetes.io/managed-by: rpi-k8s-cluster
+        app.kubernetes.io/part-of: rpi-k8s-platform
     spec:
       initContainers:
         # Create MinIO bucket for artifacts
         - name: create-bucket
           image: minio/mc:latest
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: MINIO_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-credentials
+                  key: MINIO_ENDPOINT
           command:
             - sh
             - -c
             - |
-              mc alias set minio http://minio.data-services.svc.cluster.local:9000 minioadmin minioadmin123
+              mc alias set minio "${MINIO_ENDPOINT}" "${AWS_ACCESS_KEY_ID}" "${AWS_SECRET_ACCESS_KEY}"
               mc mb --ignore-existing minio/mlflow-artifacts
-              mc anonymous set download minio/mlflow-artifacts
               echo "MinIO bucket created"
       containers:
         - name: mlflow
           image: ghcr.io/mlflow/mlflow:v2.10.0
           command:
-            - mlflow
-            - server
-            - --host=0.0.0.0
-            - --port=5000
-            - --backend-store-uri=$(MLFLOW_BACKEND_STORE_URI)
-            - --default-artifact-root=$(MLFLOW_DEFAULT_ARTIFACT_ROOT)
-            - --serve-artifacts
+            - sh
+            - -c
+            - |
+              pip install --quiet psycopg2-binary &&
+              mlflow server \
+                --host=0.0.0.0 \
+                --port=5000 \
+                --backend-store-uri="$MLFLOW_BACKEND_STORE_URI" \
+                --default-artifact-root="$MLFLOW_DEFAULT_ARTIFACT_ROOT" \
+                --serve-artifacts
           envFrom:
             - configMapRef:
                 name: mlflow-config
+            - secretRef:
+                name: mlflow-minio-credentials
           ports:
             - name: http
               containerPort: 5000

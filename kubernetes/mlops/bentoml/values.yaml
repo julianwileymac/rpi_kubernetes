@@ -4,7 +4,7 @@
 # Install with:
 #   helm repo add bentoml https://bentoml.github.io/yatai-chart
 #   helm repo update
-#   helm install yatai bentoml/yatai \
+#   helm upgrade --install yatai bentoml/yatai \
 #     --namespace ml-platform --create-namespace -f values.yaml
 # =============================================================================
 
@@ -38,10 +38,22 @@ yatai:
     enabled: false  # Use external MinIO
     external:
       endpoint: minio.data-services.svc.cluster.local:9000
+      # Defaults are overridden from yatai-minio in README/setup guide.
+      # Keep in sync with secret.yaml (yatai-minio)
       accessKey: minioadmin
       secretKey: minioadmin123
       bucket: bentoml-artifacts
       secure: false
+
+  extraEnvs:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "http://otel-collector.observability.svc.cluster.local:4317"
+    - name: OTEL_SERVICE_NAME
+      value: "bentoml-yatai"
+    - name: OTEL_TRACES_EXPORTER
+      value: "otlp"
+    - name: OTEL_LOGS_EXPORTER
+      value: "otlp"
 
 # Yatai Deployment Operator
 yataiDeploymentOperator:

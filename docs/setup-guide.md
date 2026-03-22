@@ -318,6 +318,9 @@ rpi4           Ready    <none>                 4m    v1.29.0+k3s1
 kubectl apply -k kubernetes/
 ```
 
+This applies MinIO and a bucket bootstrap Job that creates:
+`mlflow-artifacts`, `argo-workflows`, `bentoml-artifacts`, `milvus-bucket`, and `loki-data`.
+
 ### 7.2 Deploy Observability Stack
 
 ```bash
@@ -326,8 +329,8 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-# Install Prometheus/Grafana
-helm install prometheus prometheus-community/kube-prometheus-stack \
+# Install or upgrade Prometheus/Grafana
+helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
   --namespace observability \
   --create-namespace \
   -f kubernetes/base-services/prometheus/values.yaml
@@ -335,10 +338,30 @@ helm install prometheus prometheus-community/kube-prometheus-stack \
 # Deploy VictoriaMetrics (via Kustomize)
 kubectl apply -k kubernetes/observability/victoriametrics/
 
-# Install Loki
-helm install loki grafana/loki \
+# Create/refresh Loki MinIO credentials
+kubectl apply -f kubernetes/observability/loki/minio-secret.yaml
+
+# Install or upgrade Loki
+helm upgrade --install loki grafana/loki \
   --namespace observability \
+  --create-namespace \
   -f kubernetes/observability/loki/values.yaml
+```
+
+### 7.2.1 Verify Ingress and Telemetry Prerequisites
+
+```bash
+# Ensure ingress controller exists for *.local hosts
+kubectl -n ingress get svc ingress-nginx-controller
+kubectl get ingressclass nginx
+
+# Ensure LoadBalancer allocator exists (bare-metal clusters)
+kubectl -n metallb-system get pods
+
+# Verify telemetry backends and collector
+kubectl -n observability get deploy jaeger
+kubectl -n observability get ds otel-collector
+kubectl -n observability get statefulset,deploy | grep loki
 ```
 
 ### 7.3 Deploy MLOps Services
@@ -352,25 +375,41 @@ helm repo add bentoml https://bentoml.github.io/yatai-chart
 helm repo update
 
 # Deploy KubeRay Operator (for Ray)
-helm install kuberay-operator kuberay/kuberay-operator --namespace ml-platform
+helm upgrade --install kuberay-operator kuberay/kuberay-operator --namespace ml-platform
+
+# Ensure Milvus MinIO credentials are applied
+kubectl apply -f kubernetes/base-services/milvus/secret.yaml
 
 # Deploy Milvus
-helm install milvus milvus/milvus \
+helm upgrade --install milvus milvus/milvus \
   --namespace data-services \
-  -f kubernetes/base-services/milvus/values.yaml
+  -f kubernetes/base-services/milvus/values.yaml \
+  --set externalS3.host="$(kubectl get secret -n data-services milvus-minio -o jsonpath='{.data.host}' | base64 -d)" \
+  --set externalS3.port="$(kubectl get secret -n data-services milvus-minio -o jsonpath='{.data.port}' | base64 -d)" \
+  --set externalS3.accessKey="$(kubectl get secret -n data-services milvus-minio -o jsonpath='{.data.accesskey}' | base64 -d)" \
+  --set externalS3.secretKey="$(kubectl get secret -n data-services milvus-minio -o jsonpath='{.data.secretkey}' | base64 -d)" \
+  --set externalS3.bucketName="$(kubectl get secret -n data-services milvus-minio -o jsonpath='{.data.bucket}' | base64 -d)"
+
+# Ensure Argo MinIO credentials are applied
+kubectl apply -f kubernetes/mlops/argo-workflows/secret.yaml
 
 # Deploy Argo Workflows
-helm install argo-workflows argo/argo-workflows \
+helm upgrade --install argo-workflows argo/argo-workflows \
   --namespace mlops \
   --create-namespace \
   -f kubernetes/mlops/argo-workflows/values.yaml
-kubectl apply -f kubernetes/mlops/argo-workflows/secret.yaml
+
+# Ensure BentoML PostgreSQL and MinIO credentials are applied
+kubectl apply -f kubernetes/mlops/bentoml/secret.yaml
 
 # Deploy BentoML/Yatai
-helm install yatai bentoml/yatai \
+helm upgrade --install yatai bentoml/yatai \
   --namespace ml-platform \
-  -f kubernetes/mlops/bentoml/values.yaml
-kubectl apply -f kubernetes/mlops/bentoml/secret.yaml
+  -f kubernetes/mlops/bentoml/values.yaml \
+  --set yatai.minio.external.endpoint="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.endpoint}' | base64 -d)" \
+  --set yatai.minio.external.accessKey="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.accesskey}' | base64 -d)" \
+  --set yatai.minio.external.secretKey="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.secretkey}' | base64 -d)" \
+  --set yatai.minio.external.bucket="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.bucket}' | base64 -d)"
 ```
 
 ## Step 9: Configure Local DNS (Optional)
@@ -471,6 +510,25 @@ kubectl get svc -A | grep LoadBalancer
 
 # Check MetalLB
 kubectl logs -n metallb-system -l app=metallb
+
+# Check ingress controller and class
+kubectl -n ingress get svc ingress-nginx-controller
+kubectl get ingressclass nginx
+```
+
+### Logs not appearing in Loki / traces not appearing in Jaeger
+
+```bash
+# Collector export health (look for loki and jaeger exporter errors)
+kubectl logs -n observability -l app=otel-collector --tail=200
+
+# Loki and Jaeger health
+kubectl get pods -n observability -l app.kubernetes.io/name=loki
+kubectl get pods -n observability -l app=jaeger
+
+# Service reachability from inside cluster
+kubectl run -n observability netcheck --rm -it --image=curlimages/curl --restart=Never -- \
+  sh -c "curl -sf http://loki.observability:3100/ready && curl -sf http://jaeger-query.observability:16686"
 ```
 
 ## Next Steps

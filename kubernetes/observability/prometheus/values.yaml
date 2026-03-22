@@ -1,0 +1,186 @@
+# =============================================================================
+# kube-prometheus-stack Helm Values
+# =============================================================================
+# Install with:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm repo update
+#   helm install prometheus prometheus-community/kube-prometheus-stack \
+#     --namespace observability --create-namespace -f values.yaml
+# =============================================================================
+
+fullnameOverride: prometheus
+
+# Alertmanager
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
+          storageClassName: local-path
+  ingress:
+    enabled: true
+    hosts:
+      - alertmanager.local
+    ingressClassName: nginx
+
+# Default rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: true
+    general: true
+    k8s: true
+    kubeApiserver: true
+    kubePrometheusGeneral: true
+    kubePrometheusNodeAlerting: true
+    kubeScheduler: true
+    kubeStateMetrics: true
+    kubelet: true
+    network: true
+    node: true
+    prometheus: true
+
+# Grafana
+grafana:
+  enabled: true
+  adminPassword: admin123
+
+  initChownData:
+    enabled: false
+
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: local-path
+
+  service:
+    port: 3000
+    type: LoadBalancer
+
+  ingress:
+    enabled: true
+    hosts:
+      - grafana.local
+    ingressClassName: nginx
+
+  additionalDataSources:
+    - name: Jaeger
+      type: jaeger
+      access: proxy
+      url: http://jaeger-query.observability:16686
+      isDefault: false
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.observability:3100
+      isDefault: false
+    - name: VictoriaMetrics
+      type: prometheus
+      access: proxy
+      url: http://victoriametrics.observability:8428
+      isDefault: false
+
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  dashboards:
+    default:
+      k3s-cluster:
+        gnetId: 15757
+        revision: 1
+        datasource: Prometheus
+      node-exporter:
+        gnetId: 1860
+        revision: 27
+        datasource: Prometheus
+      minio:
+        gnetId: 13502
+        revision: 2
+        datasource: Prometheus
+      mlflow:
+        gnetId: 12708
+        revision: 1
+        datasource: Prometheus
+      ray:
+        gnetId: 12006
+        revision: 1
+        datasource: Prometheus
+
+# Disable components not available on k3s
+kubeControllerManager:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+
+# kube-state-metrics
+kubeStateMetrics:
+  enabled: true
+
+# Node exporter
+nodeExporter:
+  enabled: true
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+# Prometheus
+prometheus:
+  ingress:
+    enabled: true
+    hosts:
+      - prometheus.local
+    ingressClassName: nginx
+  prometheusSpec:
+    retention: 15d
+    retentionSize: 15GB
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
+          storageClassName: local-path
+    remoteWrite:
+      - url: http://victoriametrics.observability:8428/api/v1/write
+        queueConfig:
+          capacity: 10000
+          maxSamplesPerSend: 1000
+          maxShards: 200
+    additionalScrapeConfigs:
+      - job_name: minio
+        metrics_path: /minio/v2/metrics/cluster
+        scheme: http
+        static_configs:
+          - targets:
+              - minio.data-services:9000
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false

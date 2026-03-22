@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-bucket-bootstrap
+  namespace: data-services
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: minio/mc:latest
+          env:
+            - name: MINIO_ENDPOINT
+              value: "http://minio.data-services.svc.cluster.local:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: root-user
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: root-password
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+
+              echo "Waiting for MinIO API..."
+              until mc alias set minio "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}"; do
+                echo "MinIO not ready yet, retrying in 5 seconds..."
+                sleep 5
+              done
+
+              for bucket in mlflow-artifacts argo-workflows bentoml-artifacts milvus-bucket loki-data; do
+                mc mb --ignore-existing "minio/${bucket}"
+              done
+
+              echo "MinIO buckets are ready."

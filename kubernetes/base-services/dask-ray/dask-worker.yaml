@@ -27,6 +27,7 @@ spec:
             - --nthreads=2
             - --memory-limit=2GB
             - --death-timeout=60
+            - --dashboard-address=:8789
           env:
             - name: DASK_SCHEDULER_ADDRESS
               value: "tcp://dask-scheduler.ml-platform.svc.cluster.local:8786"

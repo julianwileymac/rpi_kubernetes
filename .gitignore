@@ -81,3 +81,6 @@ mlruns/
 # Build artifacts
 *.tar.gz
 *.zip
+
+# Session logs
+SESSION_LOG.txt

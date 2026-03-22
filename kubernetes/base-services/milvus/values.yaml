@@ -4,7 +4,7 @@
 # Install with:
 #   helm repo add milvus https://milvus-io.github.io/milvus-helm
 #   helm repo update
-#   helm install milvus milvus/milvus \
+#   helm upgrade --install milvus milvus/milvus \
 #     --namespace data-services --create-namespace -f values.yaml
 # =============================================================================
 
@@ -45,8 +45,10 @@ minio:
 # External MinIO configuration
 externalS3:
   enabled: true
+  # Defaults are overridden via secret.yaml in the README install command.
   host: minio.data-services.svc.cluster.local
   port: 9000
+  # Keep in sync with MinIO credentials used by other services
   accessKey: minioadmin
   secretKey: minioadmin123
   bucketName: milvus-bucket

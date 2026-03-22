@@ -9,6 +9,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
+  - bootstrap-buckets-job.yaml
 
 commonLabels:
   app.kubernetes.io/name: minio

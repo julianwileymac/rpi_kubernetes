@@ -84,6 +84,19 @@ kubectl apply -f kubernetes/base-services/metallb/
 **Workaround:** Health monitor and kubectl use direct IP (192.168.12.112)  
 **Resolution:** Configure Avahi hostname on control plane or use static hosts entry
 
+### 4. Loki and kube-prometheus-stack are Helm-managed
+**Impact:** `kubectl apply -k kubernetes/` does not deploy Loki or full Prometheus/Grafana stack. Logs/traces dashboards may appear incomplete until Helm releases are installed.  
+**Resolution:** Install/upgrade Helm releases using:
+```bash
+helm upgrade --install prometheus prometheus-community/kube-prometheus-stack -n observability -f kubernetes/base-services/prometheus/values.yaml
+kubectl apply -f kubernetes/observability/loki/minio-secret.yaml
+helm upgrade --install loki grafana/loki -n observability -f kubernetes/observability/loki/values.yaml
+```
+
+### 5. Ingress scheduling constraint may break ARM-only setups
+**Impact:** If ingress-nginx is restricted to `kubernetes.io/arch=amd64`, ARM-only clusters can fail to schedule the ingress controller, making all `*.local` ingress routes inaccessible.  
+**Resolution:** Ensure ingress-nginx is deployable on available node architectures and verify `kubectl -n ingress get svc ingress-nginx-controller`.
+
 ## mDNS Discovery Status
 
 ### Working
@@ -200,4 +213,5 @@ python bootstrap/scripts/cluster_health_monitor.py --check-once
 ✅ **Health monitoring tools deployed**  
 ⚠️ **MetalLB needs deployment for LoadBalancer services**  
 ⚠️ **Control plane mDNS needs hostname configuration**  
-⚠️ **Some pods pending due to storage/resource constraints**
+⚠️ **Some pods pending due to storage/resource constraints**  
+⚠️ **Helm-managed observability components must be installed (Loki/Prometheus)**

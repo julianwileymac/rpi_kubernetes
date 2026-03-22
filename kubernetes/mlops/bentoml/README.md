@@ -18,17 +18,21 @@ kubectl exec -it -n data-services deployment/postgresql -- psql -U postgres -c "
 
 # Create MinIO bucket for artifacts
 kubectl run -it --rm minio-client --image=minio/mc --restart=Never -- \
-  sh -c "mc alias set minio http://minio.data-services:9000 minioadmin minioadmin123 && \
+  sh -c "mc alias set minio http://minio.data-services.svc.cluster.local:9000 minioadmin minioadmin123 && \
          mc mb --ignore-existing minio/bentoml-artifacts"
 
-# Install Yatai
-helm install yatai bentoml/yatai \
+# Create Kubernetes secrets
+kubectl apply -f secret.yaml
+
+# Install or upgrade Yatai
+helm upgrade --install yatai bentoml/yatai \
   --namespace ml-platform \
   --create-namespace \
-  -f values.yaml
-
-# Create PostgreSQL secret
-kubectl apply -f secret.yaml
+  -f values.yaml \
+  --set yatai.minio.external.endpoint="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.endpoint}' | base64 -d)" \
+  --set yatai.minio.external.accessKey="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.accesskey}' | base64 -d)" \
+  --set yatai.minio.external.secretKey="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.secretkey}' | base64 -d)" \
+  --set yatai.minio.external.bucket="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.bucket}' | base64 -d)"
 ```
 
 ## Access

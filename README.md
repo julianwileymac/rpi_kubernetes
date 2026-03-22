@@ -27,7 +27,7 @@ A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu de
 ## Features
 
 - **k3s Kubernetes** - Lightweight, production-ready Kubernetes distribution
-- **Base Services** - JupyterHub, MLFlow, MinIO, PostgreSQL, Prometheus, Grafana, Dask/Ray, ChromaDB, Milvus
+- **Base Services** - JupyterHub, MLFlow, MinIO, PostgreSQL, Prometheus, Grafana, Dask/Ray, ChromaDB, Milvus, DataHub
 - **Management Framework** - Python FastAPI backend + Next.js control panel
 - **OpenTelemetry** - Distributed tracing and observability
 - **Ansible Automation** - Reproducible cluster provisioning
@@ -193,6 +193,9 @@ kubectl wait --for=condition=available --timeout=300s deployment/minio -n data-s
 ./bootstrap/scripts/verify-minio.sh
 ```
 
+> Note: `kubectl apply -k kubernetes/` deploys core services plus OTel/Jaeger/VictoriaMetrics.
+> Prometheus/Grafana, Loki, Milvus, Argo Workflows, and BentoML are installed separately via Helm values in this repo (see [docs/setup-guide.md](docs/setup-guide.md)).
+
 ### Step 8: Access Services
 
 Add these entries to your workstation's hosts file (`/etc/hosts` or `C:\Windows\System32\drivers\etc\hosts`),
@@ -201,7 +204,7 @@ using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-ngi
 ```
 192.168.1.200  jupyter.local mlflow.local grafana.local minio.local control.local \
                prometheus.local vm.local loki.local jaeger.local argo.local \
-               chromadb.local milvus.local yatai.local
+               chromadb.local milvus.local yatai.local datahub.local
 ```
 
 | Service | URL | Default Credentials |
@@ -216,8 +219,9 @@ using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-ngi
 | Argo Workflows | http://argo.local:2746 | - |
 | ChromaDB | http://chromadb.local:8000 | - |
 | Milvus | http://milvus.local:19530 | - |
+| DataHub | http://datahub.local | datahub / datahub |
 | BentoML/Yatai | http://yatai.local:3000 | - |
-| MinIO Console | http://minio.local:9001 | minioadmin / minioadmin |
+| MinIO Console | http://minio.local:9001 | minioadmin / minioadmin123 |
 | Control Panel | http://control.local | - |
 
 Control panel access options:
@@ -258,7 +262,10 @@ rpi_kubernetes/
 
 ### Storage & Database
 - **MinIO** - S3-compatible object storage for artifacts
-- **PostgreSQL** - Relational database for MLFlow, JupyterHub
+- **PostgreSQL** - Relational database for MLFlow, JupyterHub, DataHub
+
+### Data Governance
+- **DataHub** - Metadata platform for data discovery, governance, and lineage tracking (with Iceberg Catalog)
 
 ### Machine Learning
 - **MLFlow** - Experiment tracking and model registry (PostgreSQL backend)

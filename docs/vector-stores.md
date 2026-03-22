@@ -309,7 +309,7 @@ kubectl get pods -n data-services -l app.kubernetes.io/name=milvus
 
 # Check MinIO bucket
 kubectl run -it --rm minio-client --image=minio/mc --restart=Never -- \
-  sh -c "mc alias set minio http://minio.data-services:9000 minioadmin minioadmin123 && \
+  sh -c "mc alias set minio http://minio.data-services.svc.cluster.local:9000 minioadmin minioadmin123 && \
          mc ls minio/milvus-bucket"
 ```
 

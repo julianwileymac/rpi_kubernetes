@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: postgresql
-          image: postgres:15-alpine
+          image: pgvector/pgvector:pg15
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:

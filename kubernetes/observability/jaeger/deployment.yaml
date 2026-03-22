@@ -30,8 +30,9 @@ spec:
             # Prometheus metrics storage configuration
             - name: METRICS_STORAGE_TYPE
               value: "prometheus"
+            # kube-prometheus-stack with fullnameOverride: prometheus exposes this Service
             - name: PROMETHEUS_SERVER_URL
-              value: "http://prometheus-kube-prometheus-prometheus.observability:9090"
+              value: "http://prometheus-prometheus.observability:9090"
             # Admin HTTP port for metrics
             - name: ADMIN_HTTP_PORT
               value: "14269"

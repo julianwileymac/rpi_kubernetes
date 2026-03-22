@@ -27,13 +27,16 @@ spec:
       containers:
         - name: chromadb
           image: chromadb/chroma:0.4.22
+          command: ["uvicorn"]
           args:
-            - --host
-            - 0.0.0.0
-            - --port
+            - "chromadb.app:app"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
             - "8000"
-            - --persist-directory
-            - /chroma/chroma
+            - "--workers"
+            - "1"
+            - "--proxy-headers"
           ports:
             - name: http
               containerPort: 8000
@@ -41,11 +44,21 @@ spec:
           env:
             - name: IS_PERSISTENT
               value: "TRUE"
+            - name: PERSIST_DIRECTORY
+              value: "/chroma-data"
             - name: ANONYMIZED_TELEMETRY
               value: "FALSE"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.observability.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "chromadb"
+            - name: OTEL_TRACES_EXPORTER
+              value: "otlp"
+            - name: OTEL_LOGS_EXPORTER
+              value: "otlp"
           volumeMounts:
             - name: data
-              mountPath: /chroma
+              mountPath: /chroma-data
           resources:
             requests:
               cpu: 100m
