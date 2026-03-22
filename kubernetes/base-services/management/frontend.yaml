@@ -78,7 +78,7 @@ spec:
   type: LoadBalancer
   ports:
     - name: http
-      port: 8080
+      port: 9280
       targetPort: 3000
       protocol: TCP
   selector:
@@ -96,7 +96,7 @@ spec:
       port: 80
       targetPort: 3000
       protocol: TCP
-      nodePort: 30080
+      nodePort: 31280
   selector:
     app: management-ui
 ---
@@ -109,22 +109,12 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    # Next.js specific rewrites
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/use-regex: "false"
 spec:
   ingressClassName: nginx
   rules:
     - host: control.local
       http:
         paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: management-ui
-                port:
-                  number: 80
           - path: /api
             pathType: Prefix
             backend:
@@ -132,3 +122,26 @@ spec:
                 name: management-api
                 port:
                   number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: management-ui
+                port:
+                  number: 80
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: management-api
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: management-ui
+                port:
+                  number: 80

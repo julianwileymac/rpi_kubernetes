@@ -21,6 +21,9 @@ resources:
   # Namespaces first
   - namespaces/namespaces.yaml
   
+  # Storage
+  - storage/
+  
   # Base services
   - base-services/minio/
   - base-services/postgresql/

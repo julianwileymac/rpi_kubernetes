@@ -82,8 +82,9 @@ If your router supports DHCP reservation, you can assign static IPs based on MAC
 
 ### 1.3 Connect External Storage
 
-1. Connect USB SSDs to each Raspberry Pi
-2. The bootstrap scripts will automatically partition and mount them
+1. Connect USB SSDs to each Raspberry Pi (one or more per node)
+2. The auto-mount playbook will detect, partition, format, and mount **every** external drive
+3. Each drive is exposed to Kubernetes as a PersistentVolume automatically
 
 ## Step 2: Configure Ansible Inventory
 
@@ -256,8 +257,8 @@ Use the PowerShell scripts to bootstrap nodes without Ansible:
 # Run bootstrap playbook
 ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/bootstrap.yml
 
-# Setup external storage on workers
-ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/storage-setup.yml
+# Auto-mount all external drives and create Kubernetes PVs
+ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/auto-mount-storage.yml
 
 # Reboot all nodes to apply changes
 ansible all -m reboot -i ansible/inventory/cluster.yml
@@ -498,8 +499,18 @@ kubectl describe nodes | grep -A 5 "Allocated resources"
 # Verify external storage on workers
 ansible workers -a "df -h /mnt/storage" -i ansible/inventory/cluster.yml
 
-# Check PVCs
+# Check drive manifest on each worker
+ansible workers -a "cat /var/lib/auto-mount-drives/manifest.json" -i ansible/inventory/cluster.yml
+
+# Re-run auto-mount to pick up new drives or fix mounts
+ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/auto-mount-storage.yml
+
+# Check PVs and PVCs
+kubectl get pv -o wide
 kubectl get pvc -A
+
+# Check StorageClasses (should show both local-path and local-storage)
+kubectl get storageclass
 ```
 
 ### Service not accessible

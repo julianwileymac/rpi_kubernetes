@@ -1,0 +1,3 @@
+# Trigger auto-mount when USB block devices are added or removed
+ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", TAG+="systemd", ENV{SYSTEMD_WANTS}="auto-mount-drives.service"
+ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ATTRS{removable}=="1", TAG+="systemd", ENV{SYSTEMD_WANTS}="auto-mount-drives.service"

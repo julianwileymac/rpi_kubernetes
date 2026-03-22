@@ -172,11 +172,9 @@ if $BUILD_FRONTEND; then
     cd "$REPO_DIR/$FRONTEND_DIR"
     info "Context: $(pwd)"
 
-    # Build with the correct API URL for in-cluster communication
-    API_URL="http://management-api.management.svc.cluster.local:8080"
-    info "Setting NEXT_PUBLIC_API_URL=$API_URL"
-
-    if docker build -t "$FRONTEND_IMAGE" --build-arg API_URL="$API_URL" .; then
+    # Browser API calls use relative /api paths routed by the Ingress.
+    # No NEXT_PUBLIC_API_URL is baked; the pod's API_URL env var handles SSR.
+    if docker build -t "$FRONTEND_IMAGE" .; then
         ok "Frontend image built successfully"
     else
         fail "Frontend image build failed"

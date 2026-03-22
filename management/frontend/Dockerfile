@@ -25,9 +25,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build arguments for API URL
-ARG API_URL=http://localhost:8080
-ENV NEXT_PUBLIC_API_URL=$API_URL
+# Browser API calls use relative /api paths (routed by Ingress).
+# Server-side rendering uses the API_URL env var set on the pod at runtime.
 
 # Build the application
 RUN npm run build

@@ -1,0 +1,303 @@
+---
+# =============================================================================
+# Auto-Mount Storage & Kubernetes PV Provisioning Playbook
+# =============================================================================
+# Deploys multi-drive auto-mount infrastructure to all worker nodes, mounts
+# every detected external drive, then creates Kubernetes PersistentVolumes
+# and updates the local-path-provisioner configuration.
+#
+# Usage:
+#   ansible-playbook -i inventory/cluster.yml playbooks/auto-mount-storage.yml
+#
+# Tags:
+#   deploy    - Deploy scripts, systemd units, and udev rules
+#   mount     - Run the auto-mount on workers
+#   kubernetes - Create StorageClass, PVs, update local-path-provisioner
+#
+# Variables (from inventory):
+#   external_storage_mount  - Base mount path (default: /mnt/storage)
+#   external_storage_device - Hint device (default: auto-detect)
+# =============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Play 1 — Deploy auto-mount infrastructure to worker nodes
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Deploy Auto-Mount Infrastructure
+  hosts: workers
+  become: true
+  gather_facts: true
+  tags: [deploy]
+
+  vars:
+    storage_mount: "{{ external_storage_mount | default('/mnt/storage') }}"
+    mount_script: /usr/local/sbin/auto-mount-drives.sh
+
+  tasks:
+    - name: Install auto-mount script
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../bootstrap/scripts/auto-mount-drives.sh"
+        dest: "{{ mount_script }}"
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Install auto-mount systemd service
+      ansible.builtin.template:
+        src: ../templates/auto-mount-drives.service.j2
+        dest: /etc/systemd/system/auto-mount-drives.service
+        mode: '0644'
+
+    - name: Install udev rules for USB hot-plug
+      ansible.builtin.template:
+        src: ../templates/99-auto-mount-drives.rules.j2
+        dest: /etc/udev/rules.d/99-auto-mount-drives.rules
+        mode: '0644'
+      notify: Reload udev
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable auto-mount service
+      ansible.builtin.systemd:
+        name: auto-mount-drives.service
+        enabled: true
+
+    - name: Create base storage directory
+      ansible.builtin.file:
+        path: "{{ storage_mount }}"
+        state: directory
+        mode: '0755'
+
+  handlers:
+    - name: Reload udev
+      ansible.builtin.command: udevadm control --reload-rules && udevadm trigger
+      changed_when: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Play 2 — Run auto-mount on all worker nodes
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Mount External Drives
+  hosts: workers
+  become: true
+  gather_facts: false
+  tags: [mount]
+
+  vars:
+    storage_mount: "{{ external_storage_mount | default('/mnt/storage') }}"
+    mount_script: /usr/local/sbin/auto-mount-drives.sh
+
+  tasks:
+    - name: Run auto-mount-drives
+      ansible.builtin.command: >
+        {{ mount_script }}
+        --base-path {{ storage_mount }}
+        --node-name {{ inventory_hostname }}
+        --format
+        --verbose
+      register: mount_output
+      changed_when: "'Mounted' in mount_output.stderr or 'Formatted' in mount_output.stderr"
+      failed_when: mount_output.rc != 0
+
+    - name: Display mount output
+      ansible.builtin.debug:
+        msg: "{{ mount_output.stderr_lines }}"
+
+    - name: Verify base mount
+      ansible.builtin.command: mountpoint -q {{ storage_mount }}
+      register: mount_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display mount status
+      ansible.builtin.debug:
+        msg: "{{ storage_mount }} is {{ 'mounted' if mount_check.rc == 0 else 'NOT mounted' }}"
+
+    - name: Read drive manifest
+      ansible.builtin.slurp:
+        src: /var/lib/auto-mount-drives/manifest.json
+      register: drive_manifest_raw
+      failed_when: false
+
+    - name: Configure k3s data-dir for external storage
+      ansible.builtin.lineinfile:
+        path: /etc/rancher/k3s/config.yaml
+        line: "data-dir: {{ storage_mount }}/k3s"
+        create: true
+        mode: '0644'
+      when: mount_check.rc == 0
+      notify: Restart k3s-agent
+
+  handlers:
+    - name: Restart k3s-agent
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: restarted
+      failed_when: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Play 3 — Create Kubernetes storage resources from collected manifests
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Create Kubernetes Storage Resources
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  tags: [kubernetes]
+
+  vars:
+    storage_mount: "{{ external_storage_mount | default('/mnt/storage') }}"
+
+  tasks:
+    # ── Collect manifests from workers ──────────────────────────────────────
+    - name: Collect drive manifests from all workers
+      ansible.builtin.set_fact:
+        all_manifests: >-
+          {{
+            groups['workers']
+            | map('extract', hostvars, 'drive_manifest_raw')
+            | select('defined')
+            | selectattr('content', 'defined')
+            | map(attribute='content')
+            | map('b64decode')
+            | map('from_json')
+            | list
+          }}
+
+    - name: Show discovered storage topology
+      ansible.builtin.debug:
+        msg: |
+          {% for m in all_manifests %}
+          {{ m.hostname }}: {{ m.drives | length }} drive(s)
+          {% for d in m.drives %}
+            - {{ d.device }} → {{ d.mount_path }} ({{ d.size_gi }}Gi, {{ 'primary' if d.primary else 'secondary' }})
+          {% endfor %}
+          {% endfor %}
+
+    # ── StorageClass ────────────────────────────────────────────────────────
+    - name: Apply local-storage StorageClass
+      ansible.builtin.shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: storage.k8s.io/v1
+        kind: StorageClass
+        metadata:
+          name: local-storage
+          labels:
+            app.kubernetes.io/managed-by: auto-mount-storage
+        provisioner: kubernetes.io/no-provisioner
+        volumeBindingMode: WaitForFirstConsumer
+        reclaimPolicy: Retain
+        EOF
+      changed_when: true
+
+    # ── PersistentVolumes ───────────────────────────────────────────────────
+    - name: Build flat list of (node, drive) pairs
+      ansible.builtin.set_fact:
+        all_drives: >-
+          {{
+            all_manifests
+            | subelements('drives')
+            | map('combine_node_drive')
+            | default([])
+          }}
+      failed_when: false
+      ignore_errors: true
+
+    # Fall back to loop-based PV creation (more compatible across Ansible versions)
+    - name: Create PersistentVolume for each drive on each node
+      ansible.builtin.shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: PersistentVolume
+        metadata:
+          name: local-pv-{{ item.0.hostname }}-{{ item.1.uuid[:8] | lower }}
+          labels:
+            storage.rpi-cluster/node: "{{ item.0.hostname }}"
+            storage.rpi-cluster/type: local-drive
+            storage.rpi-cluster/primary: "{{ item.1.primary | string | lower }}"
+            app.kubernetes.io/managed-by: auto-mount-storage
+        spec:
+          capacity:
+            storage: {{ item.1.size_gi }}Gi
+          volumeMode: Filesystem
+          accessModes:
+            - ReadWriteOnce
+          persistentVolumeReclaimPolicy: Retain
+          storageClassName: local-storage
+          local:
+            path: "{{ item.1.mount_path }}"
+          nodeAffinity:
+            required:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: kubernetes.io/hostname
+                      operator: In
+                      values:
+                        - "{{ item.0.hostname }}"
+        EOF
+      loop: "{{ all_manifests | subelements('drives') }}"
+      loop_control:
+        label: "{{ item.0.hostname }}/{{ item.1.device }}"
+      changed_when: true
+
+    # ── Update local-path-provisioner ───────────────────────────────────────
+    - name: Build node path map for local-path-provisioner
+      ansible.builtin.set_fact:
+        node_path_map: |
+          [
+          {% for m in all_manifests %}
+            {
+              "node": "{{ m.hostname }}",
+              "paths": [
+          {% for d in m.drives %}
+                "{{ d.mount_path }}/volumes"{{ "," if not loop.last else "" }}
+          {% endfor %}
+              ]
+            }{{ "," if not loop.last else "" }}
+          {% endfor %}
+            ,{
+              "node": "DEFAULT_PATH_FOR_NON_LISTED_NODES",
+              "paths": ["{{ storage_mount }}/volumes"]
+            }
+          ]
+
+    - name: Update local-path-provisioner ConfigMap
+      ansible.builtin.shell: |
+        cat <<'EOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: local-path-config
+          namespace: local-path-storage
+        data:
+          config.json: |-
+            {
+              "nodePathMap": {{ node_path_map | from_yaml | to_json }}
+            }
+        EOF
+      changed_when: true
+
+    - name: Restart local-path-provisioner to pick up config
+      ansible.builtin.shell: |
+        kubectl rollout restart deployment local-path-provisioner -n local-path-storage
+      changed_when: true
+      failed_when: false
+
+    # ── Verification ────────────────────────────────────────────────────────
+    - name: List all PersistentVolumes
+      ansible.builtin.command: kubectl get pv -o wide
+      register: pv_list
+      changed_when: false
+
+    - name: List StorageClasses
+      ansible.builtin.command: kubectl get storageclass
+      register: sc_list
+      changed_when: false
+
+    - name: Display storage summary
+      ansible.builtin.debug:
+        msg: |
+          === Storage Classes ===
+          {{ sc_list.stdout }}
+
+          === Persistent Volumes ===
+          {{ pv_list.stdout }}

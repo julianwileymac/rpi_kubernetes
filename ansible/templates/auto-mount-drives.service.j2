@@ -1,0 +1,27 @@
+[Unit]
+Description=Auto-detect and mount all external storage drives
+Documentation=file:///usr/local/sbin/auto-mount-drives.sh
+After=local-fs.target systemd-udev-settle.service
+Before=k3s.service k3s-agent.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/auto-mount-drives.sh \
+  --base-path {{ external_storage_mount | default('/mnt/storage') }} \
+  --node-name {{ inventory_hostname }} \
+  --wait {{ mount_wait_time | default(30) }} \
+  --format \
+  --verbose
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=300
+
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target

@@ -2,13 +2,9 @@
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
-  
-  // Environment variables
-  env: {
-    API_URL: process.env.API_URL || 'http://localhost:8080',
-  },
-  
-  // Rewrites for API proxy in development
+
+  // Proxy /api/* to the backend in local development.
+  // In production the Ingress handles this routing, so these rewrites are unused.
   async rewrites() {
     return [
       {
