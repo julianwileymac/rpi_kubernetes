@@ -117,6 +117,76 @@ Run ingestion:
 datahub ingest -c dbt-recipe.yaml
 ```
 
+## Native Ingestion CronJobs (PostgreSQL, MinIO/S3, MLflow)
+
+The repository includes native DataHub ingestion recipes and scheduled CronJobs:
+
+- `datahub-ingest-postgres`
+- `datahub-ingest-minio-s3`
+- `datahub-ingest-mlflow`
+
+All CronJobs are created in **suspended** mode by default for safe rollout.
+
+Resources are managed under:
+
+- `configmap-ingestion-settings.yaml` (non-secret coordinates)
+- `configmap-ingestion-recipes.yaml` (recipe templates)
+- `secret-ingestion-secrets.yaml` (dedicated ingestion credentials/token)
+- `cronjob-ingest-*.yaml` (schedules)
+
+Naming conventions used for operations:
+
+- CronJobs: `datahub-ingest-<source>` and `datahub-metadata-bridge`
+- Labels: `app.kubernetes.io/component=metadata-ingestion`
+- Recipe keys in ConfigMap: `recipe-<source>.yaml`
+
+### Enable Ingestion Jobs
+
+1. Set real credentials/token in `secret-ingestion-secrets.yaml`.
+2. Apply DataHub kustomize resources:
+
+```bash
+kubectl apply -k kubernetes/base-services/datahub/
+```
+
+3. Unsuspend jobs:
+
+```bash
+kubectl patch cronjob -n data-services datahub-ingest-postgres --type merge -p '{"spec":{"suspend":false}}'
+kubectl patch cronjob -n data-services datahub-ingest-minio-s3 --type merge -p '{"spec":{"suspend":false}}'
+kubectl patch cronjob -n data-services datahub-ingest-mlflow --type merge -p '{"spec":{"suspend":false}}'
+```
+
+4. Trigger a manual run (example):
+
+```bash
+kubectl create job -n data-services --from=cronjob/datahub-ingest-postgres datahub-ingest-postgres-manual
+kubectl logs -n data-services job/datahub-ingest-postgres-manual
+```
+
+## Metadata Bridge (Argo, Dagster, Milvus, Chroma)
+
+The hybrid metadata bridge job emits metadata directly to DataHub for sources that
+are not fully covered by native connectors in this repository:
+
+- Argo Workflows (`WorkflowTemplate` / `CronWorkflow` naming metadata)
+- Dagster assets/jobs naming metadata
+- Milvus collection metadata
+- ChromaDB collection metadata
+
+Managed resources:
+
+- `configmap-metadata-bridge.yaml`
+- `cronjob-metadata-bridge.yaml`
+
+Enable it after ingestion credentials are set:
+
+```bash
+kubectl patch cronjob -n data-services datahub-metadata-bridge --type merge -p '{"spec":{"suspend":false}}'
+kubectl create job -n data-services --from=cronjob/datahub-metadata-bridge datahub-metadata-bridge-manual
+kubectl logs -n data-services job/datahub-metadata-bridge-manual
+```
+
 ## Upgrade
 
 ```bash

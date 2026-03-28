@@ -1,0 +1,111 @@
+# =============================================================================
+# Valkey (Redis-compatible) for RAGFlow
+# =============================================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ragflow-redis-data
+  namespace: data-services
+  labels:
+    app: ragflow-redis
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ragflow-redis
+  namespace: data-services
+  labels:
+    app: ragflow-redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ragflow-redis
+  template:
+    metadata:
+      labels:
+        app: ragflow-redis
+    spec:
+      containers:
+        - name: valkey
+          image: valkey/valkey:8
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          args:
+            - "--requirepass"
+            - "$(REDIS_PASSWORD)"
+            - "--appendonly"
+            - "yes"
+            - "--save"
+            - "60"
+            - "1000"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ragflow-secrets
+                  key: redis-password
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["valkey-cli", "-a", "$(REDIS_PASSWORD)", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "-a", "$(REDIS_PASSWORD)", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ragflow-redis-data
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node.kubernetes.io/role
+                    operator: In
+                    values:
+                      - control-plane
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ragflow-redis
+  namespace: data-services
+  labels:
+    app: ragflow-redis
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+  selector:
+    app: ragflow-redis

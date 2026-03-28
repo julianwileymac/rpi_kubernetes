@@ -1,0 +1,9 @@
+apiVersion: argoproj.io/v1alpha1
+kind: EventBus
+metadata:
+  name: default
+  namespace: mlops
+spec:
+  nats:
+    native:
+      replicas: 1

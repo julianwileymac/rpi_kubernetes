@@ -23,6 +23,7 @@ HOST="${HOST:-control.local}"
 VERBOSE="${VERBOSE:-false}"
 SKIP_INGRESS="${SKIP_INGRESS:-false}"
 SKIP_LOADBALANCER="${SKIP_LOADBALANCER:-false}"
+EXPECTED_NODEPORT="${EXPECTED_NODEPORT:-31280}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -248,10 +249,11 @@ check_loadbalancer_service() {
         
         # Test connectivity
         if command -v curl &> /dev/null && [[ "$SKIP_LOADBALANCER" != "true" ]]; then
-            log_info "Testing LoadBalancer connectivity on port 8080"
+            local lb_port=$(kubectl get svc -n "$NAMESPACE" management-ui-external -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "9280")
+            log_info "Testing LoadBalancer connectivity on port $lb_port"
             local http_code=$(curl -s -o /dev/null -w "%{http_code}" \
                 --max-time 10 \
-                "http://$lb_ip:8080/" || echo "000")
+                "http://$lb_ip:$lb_port/" || echo "000")
             
             if [[ "$http_code" == "200" ]] || [[ "$http_code" == "301" ]] || [[ "$http_code" == "302" ]]; then
                 log_success "LoadBalancer connectivity test passed (HTTP $http_code)"
@@ -265,6 +267,30 @@ check_loadbalancer_service() {
         log_warning "LoadBalancer IP not assigned yet (may take a few minutes)"
         return 1
     fi
+}
+
+# Check NodePort service
+check_nodeport_service() {
+    log_info "Checking NodePort service: management-ui-nodeport"
+
+    local nodeport_exists=$(kubectl get svc -n "$NAMESPACE" management-ui-nodeport -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    if [[ -z "$nodeport_exists" ]]; then
+        log_error "NodePort service management-ui-nodeport not found"
+        return 1
+    fi
+
+    local node_port=$(kubectl get svc -n "$NAMESPACE" management-ui-nodeport -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+    if [[ "$node_port" == "$EXPECTED_NODEPORT" ]]; then
+        log_success "NodePort is configured as expected: $node_port"
+        return 0
+    fi
+
+    if [[ -n "$node_port" ]]; then
+        log_warning "NodePort is $node_port (expected: $EXPECTED_NODEPORT)"
+    else
+        log_warning "Unable to determine NodePort value"
+    fi
+    return 1
 }
 
 # Display access information
@@ -287,9 +313,20 @@ display_access_info() {
     # LoadBalancer access
     local lb_ip=$(kubectl get svc -n "$NAMESPACE" management-ui-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
     if [[ -n "$lb_ip" ]]; then
+        local lb_port=$(kubectl get svc -n "$NAMESPACE" management-ui-external -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "9280")
         echo ""
         log_info "LoadBalancer Access:"
-        echo "  URL: http://$lb_ip:8080"
+        echo "  URL: http://$lb_ip:$lb_port"
+        echo ""
+    fi
+
+    # NodePort access
+    local node_port=$(kubectl get svc -n "$NAMESPACE" management-ui-nodeport -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+    if [[ -n "$node_port" ]]; then
+        local node_ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "<node-ip>")
+        echo ""
+        log_info "NodePort Access:"
+        echo "  URL: http://$node_ip:$node_port"
         echo ""
     fi
     
@@ -354,6 +391,9 @@ main() {
     if [[ "$SKIP_LOADBALANCER" != "true" ]]; then
         check_loadbalancer_service || errors=$((errors + 1))
     fi
+
+    # Check NodePort service
+    check_nodeport_service || errors=$((errors + 1))
     
     # Display access information
     display_access_info

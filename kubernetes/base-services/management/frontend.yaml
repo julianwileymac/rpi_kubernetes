@@ -1,29 +1,157 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: management-ui-static
+  namespace: management
+data:
+  default.conf: |
+    server {
+      listen 80;
+      server_name _;
+
+      root /usr/share/nginx/html;
+      index index.html;
+
+      location / {
+        try_files $uri /index.html;
+      }
+
+      location /api/ {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://management-api.management.svc.cluster.local:8080/api/;
+      }
+
+      location = /api {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://management-api.management.svc.cluster.local:8080/api;
+      }
+    }
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>RPi Kubernetes Control Panel</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; background: #f6f8fa; color: #1f2937; }
+          header { padding: 16px 20px; background: #111827; color: #f9fafb; }
+          main { padding: 20px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); }
+          .card { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+          h1 { font-size: 20px; margin: 0; }
+          h2 { font-size: 16px; margin: 0 0 10px; }
+          pre { margin: 0; white-space: pre-wrap; word-break: break-word; background: #f3f4f6; padding: 8px; border-radius: 6px; }
+          .ok { color: #047857; font-weight: 600; }
+          .warn { color: #92400e; font-weight: 600; }
+          button { border: 0; border-radius: 6px; padding: 8px 12px; background: #2563eb; color: white; cursor: pointer; }
+          .links a { margin-right: 12px; }
+        </style>
+      </head>
+      <body>
+        <header>
+          <h1>RPi Kubernetes Control Panel</h1>
+        </header>
+        <main>
+          <section class="card">
+            <h2>API Health</h2>
+            <p id="health" class="warn">Loading...</p>
+            <button onclick="refreshAll()">Refresh</button>
+          </section>
+          <section class="card">
+            <h2>Cluster Namespaces</h2>
+            <pre id="namespaces">Loading...</pre>
+          </section>
+          <section class="card">
+            <h2>Cluster Nodes</h2>
+            <pre id="nodes">Loading...</pre>
+          </section>
+          <section class="card links">
+            <h2>Quick Links</h2>
+            <a href="/api/docs" target="_blank" rel="noreferrer">Management API Docs</a>
+            <a href="/api/health" target="_blank" rel="noreferrer">Health JSON</a>
+            <a href="/api/cluster/services" target="_blank" rel="noreferrer">Services JSON</a>
+          </section>
+        </main>
+        <script>
+          async function fetchJson(path) {
+            const res = await fetch(path, { headers: { "Accept": "application/json" } });
+            if (!res.ok) {
+              throw new Error(path + " returned " + res.status);
+            }
+            return await res.json();
+          }
+          async function refreshAll() {
+            const healthEl = document.getElementById("health");
+            try {
+              const health = await fetchJson("/api/health");
+              healthEl.textContent = health.status || "ok";
+              healthEl.className = "ok";
+            } catch (err) {
+              healthEl.textContent = String(err);
+              healthEl.className = "warn";
+            }
+            try {
+              const namespaces = await fetchJson("/api/cluster/namespaces");
+              document.getElementById("namespaces").textContent = JSON.stringify(namespaces, null, 2);
+            } catch (err) {
+              document.getElementById("namespaces").textContent = String(err);
+            }
+            try {
+              const nodes = await fetchJson("/api/cluster/nodes");
+              document.getElementById("nodes").textContent = JSON.stringify(nodes, null, 2);
+            } catch (err) {
+              document.getElementById("nodes").textContent = String(err);
+            }
+          }
+          refreshAll();
+        </script>
+      </body>
+    </html>
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: management-ui
   namespace: management
+  labels:
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: management-ui
+      app.kubernetes.io/name: management
+      app.kubernetes.io/component: control-panel
+      app.kubernetes.io/part-of: rpi-k8s-platform
+      app.kubernetes.io/managed-by: rpi-k8s-cluster
   template:
     metadata:
       labels:
         app: management-ui
+        app.kubernetes.io/name: management
+        app.kubernetes.io/component: control-panel
+        app.kubernetes.io/part-of: rpi-k8s-platform
+        app.kubernetes.io/managed-by: rpi-k8s-cluster
     spec:
       containers:
         - name: ui
-          image: rpi-k8s-control-panel:latest
+          image: nginx:1.27-alpine
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 3000
+              containerPort: 80
               protocol: TCP
-          env:
-            - name: API_URL
-              value: "http://management-api.management.svc.cluster.local:8080"
           resources:
             requests:
               cpu: 50m
@@ -34,15 +162,26 @@ spec:
           livenessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: 80
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: 80
             initialDelaySeconds: 5
             periodSeconds: 10
+          volumeMounts:
+            - name: ui-static
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+            - name: ui-static
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+      volumes:
+        - name: ui-static
+          configMap:
+            name: management-ui-static
       affinity:
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -59,46 +198,73 @@ kind: Service
 metadata:
   name: management-ui
   namespace: management
+  labels:
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 spec:
   type: ClusterIP
   ports:
     - name: http
       port: 80
-      targetPort: 3000
+      targetPort: 80
       protocol: TCP
   selector:
     app: management-ui
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: management-ui-external
   namespace: management
+  labels:
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 spec:
   type: LoadBalancer
   ports:
     - name: http
       port: 9280
-      targetPort: 3000
+      targetPort: 80
       protocol: TCP
   selector:
     app: management-ui
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: management-ui-nodeport
   namespace: management
+  labels:
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 spec:
   type: NodePort
   ports:
     - name: http
       port: 80
-      targetPort: 3000
+      targetPort: 80
       protocol: TCP
       nodePort: 31280
   selector:
     app: management-ui
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

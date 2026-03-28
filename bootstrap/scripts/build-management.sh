@@ -32,7 +32,8 @@ DEFAULT_REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REPO_DIR="${DEFAULT_REPO_DIR}"
 
 BACKEND_IMAGE="rpi-k8s-management:latest"
-FRONTEND_IMAGE="rpi-k8s-control-panel:latest"
+FRONTEND_IMAGE="ghcr.io/julianwiley/rpi-k8s-control-panel:latest"
+FRONTEND_LOCAL_IMAGE="rpi-k8s-control-panel:latest"
 BACKEND_DIR="management/backend"
 FRONTEND_DIR="management/frontend"
 MANAGEMENT_NAMESPACE="management"
@@ -174,7 +175,7 @@ if $BUILD_FRONTEND; then
 
     # Browser API calls use relative /api paths routed by the Ingress.
     # No NEXT_PUBLIC_API_URL is baked; the pod's API_URL env var handles SSR.
-    if docker build -t "$FRONTEND_IMAGE" .; then
+    if docker build -t "$FRONTEND_IMAGE" -t "$FRONTEND_LOCAL_IMAGE" .; then
         ok "Frontend image built successfully"
     else
         fail "Frontend image build failed"
@@ -183,8 +184,8 @@ if $BUILD_FRONTEND; then
 
     # Import into k3s containerd
     step "Importing frontend image into k3s containerd"
-    if docker save "$FRONTEND_IMAGE" | sudo k3s ctr images import -; then
-        ok "Frontend image imported into k3s"
+    if docker save "$FRONTEND_IMAGE" "$FRONTEND_LOCAL_IMAGE" | sudo k3s ctr images import -; then
+        ok "Frontend images imported into k3s"
     else
         fail "Failed to import frontend image into k3s"
         exit 1
@@ -212,6 +213,11 @@ if $BUILD_FRONTEND; then
         ok "Frontend image found in k3s: $FRONTEND_IMAGE"
     else
         fail "Frontend image NOT found in k3s"
+    fi
+    if sudo k3s ctr images list | grep -q "$FRONTEND_LOCAL_IMAGE"; then
+        ok "Frontend compatibility image found in k3s: $FRONTEND_LOCAL_IMAGE"
+    else
+        fail "Frontend compatibility image NOT found in k3s"
     fi
 fi
 
@@ -268,6 +274,7 @@ echo ""
 info "Images built and imported:"
 $BUILD_BACKEND  && info "  - $BACKEND_IMAGE"
 $BUILD_FRONTEND && info "  - $FRONTEND_IMAGE"
+$BUILD_FRONTEND && info "  - $FRONTEND_LOCAL_IMAGE (compatibility tag)"
 echo ""
 info "To apply Kubernetes manifests:"
 info "  kubectl apply -k kubernetes/base-services/management/"

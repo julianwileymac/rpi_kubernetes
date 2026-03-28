@@ -65,6 +65,131 @@ grafana:
         gnetId: 12708
         revision: 1
         datasource: Prometheus
+      workflow-orchestrators:
+        json: |
+          {
+            "title": "Workflow Orchestrators - Argo and Dagster",
+            "uid": "workflow-orchestrators",
+            "schemaVersion": 39,
+            "version": 1,
+            "tags": ["argo", "dagster", "mlops"],
+            "timezone": "",
+            "editable": true,
+            "time": {
+              "from": "now-6h",
+              "to": "now"
+            },
+            "panels": [
+              {
+                "type": "stat",
+                "title": "Argo Targets Up",
+                "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+                "datasource": null,
+                "targets": [
+                  {
+                    "expr": "sum(up{job=~\".*argo-workflows-controller.*\"})",
+                    "refId": "A"
+                  }
+                ],
+                "options": {
+                  "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "justifyMode": "center"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]
+                    }
+                  },
+                  "overrides": []
+                }
+              },
+              {
+                "type": "stat",
+                "title": "Dagster Targets Up",
+                "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+                "datasource": null,
+                "targets": [
+                  {
+                    "expr": "sum(up{job=~\".*dagster-webserver.*\"})",
+                    "refId": "A"
+                  }
+                ],
+                "options": {
+                  "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+                  "colorMode": "value",
+                  "graphMode": "none",
+                  "justifyMode": "center"
+                },
+                "fieldConfig": {
+                  "defaults": {
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]
+                    }
+                  },
+                  "overrides": []
+                }
+              },
+              {
+                "type": "timeseries",
+                "title": "Argo Scrape Samples",
+                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+                "datasource": null,
+                "targets": [
+                  {
+                    "expr": "sum(scrape_samples_scraped{job=~\".*argo-workflows-controller.*\"})",
+                    "legendFormat": "argo-samples",
+                    "refId": "A"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Dagster Scrape Samples",
+                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+                "datasource": null,
+                "targets": [
+                  {
+                    "expr": "sum(scrape_samples_scraped{job=~\".*dagster-webserver.*\"})",
+                    "legendFormat": "dagster-samples",
+                    "refId": "A"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Argo Workflow Throughput (if exported)",
+                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+                "datasource": null,
+                "targets": [
+                  {
+                    "expr": "sum(rate(argo_workflows_count[5m]))",
+                    "legendFormat": "workflows/sec",
+                    "refId": "A"
+                  }
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Dagster Process CPU (if exported)",
+                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+                "datasource": null,
+                "targets": [
+                  {
+                    "expr": "sum(rate(process_cpu_seconds_total{job=~\".*dagster-webserver.*\"}[5m]))",
+                    "legendFormat": "cpu-seconds/sec",
+                    "refId": "A"
+                  }
+                ]
+              }
+            ],
+            "templating": {"list": []},
+            "annotations": {"list": []}
+          }
   
   # Additional data sources
   additionalDataSources:

@@ -194,7 +194,7 @@ kubectl wait --for=condition=available --timeout=300s deployment/minio -n data-s
 ```
 
 > Note: `kubectl apply -k kubernetes/` deploys core services plus OTel/Jaeger/VictoriaMetrics.
-> Prometheus/Grafana, Loki, Milvus, Argo Workflows, and BentoML are installed separately via Helm values in this repo (see [docs/setup-guide.md](docs/setup-guide.md)).
+> Prometheus/Grafana, Loki, Milvus, Argo Workflows, Dagster, and BentoML are installed separately via Helm values in this repo (see [docs/setup-guide.md](docs/setup-guide.md)).
 
 ### Step 8: Access Services
 
@@ -204,7 +204,7 @@ using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-ngi
 ```
 192.168.1.200  jupyter.local mlflow.local grafana.local minio.local control.local \
                prometheus.local vm.local loki.local jaeger.local argo.local \
-               chromadb.local milvus.local yatai.local datahub.local
+               dagster.local chromadb.local milvus.local yatai.local datahub.local
 ```
 
 | Service | URL | Default Credentials |
@@ -216,7 +216,8 @@ using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-ngi
 | VictoriaMetrics | http://vm.local:8428 | - |
 | Loki | http://loki.local:3100 | - |
 | Jaeger | http://jaeger.local:16686 | - |
-| Argo Workflows | http://argo.local:2746 | - |
+| Argo Workflows | http://argo.local | - |
+| Dagster | http://dagster.local | - |
 | ChromaDB | http://chromadb.local:8000 | - |
 | Milvus | http://milvus.local:19530 | - |
 | DataHub | http://datahub.local | datahub / datahub |
@@ -226,8 +227,8 @@ using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-ngi
 
 Control panel access options:
 - Ingress: `http://control.local` (hosts entry required)
-- LoadBalancer: `http://<management-ui-external-ip>`
-- NodePort: `http://<node-ip>:30080`
+- LoadBalancer: `http://<management-ui-external-ip>:9280`
+- NodePort: `http://<node-ip>:31280`
 
 ### Reimaging a Node
 
@@ -285,7 +286,9 @@ rpi_kubernetes/
 
 ### MLOps
 - **Argo Workflows** - ML pipeline orchestration
+- **Dagster** - Data and ML orchestration platform
 - **BentoML / Yatai** - Model serving platform
+- **Pipeline Recipes** - End-to-end ingest/CDC/vector workflows (see `docs/data-pipeline-recipes.md`)
 
 ## Management Framework
 
@@ -410,7 +413,7 @@ kubectl get ingress -n management management-ui
 
 # Access via LoadBalancer (if ingress not working)
 kubectl get svc -n management management-ui-external
-# Then access: http://<loadbalancer-ip>:8080
+# Then access: http://<loadbalancer-ip>:9280
 ```
 
 **Minio endpoint not accessible:**

@@ -54,3 +54,44 @@ spec:
     - port: prometheus
       path: /metrics
       interval: 30s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argo-workflows-controller
+  namespace: observability
+  labels:
+    app: argo-workflows
+spec:
+  namespaceSelector:
+    matchNames:
+      - mlops
+  selector:
+    matchLabels:
+      app: argo-workflows-controller-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dagster-webserver
+  namespace: observability
+  labels:
+    app: dagster
+spec:
+  namespaceSelector:
+    matchNames:
+      - mlops
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: dagster
+      app.kubernetes.io/name: dagster
+  endpoints:
+    - targetPort: 80
+      path: /metrics
+      interval: 30s

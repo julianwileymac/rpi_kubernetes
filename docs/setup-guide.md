@@ -320,7 +320,11 @@ kubectl apply -k kubernetes/
 ```
 
 This applies MinIO and a bucket bootstrap Job that creates:
-`mlflow-artifacts`, `argo-workflows`, `bentoml-artifacts`, `milvus-bucket`, and `loki-data`.
+`mlflow-artifacts`, `argo-workflows`, `bentoml-artifacts`, `dagster-artifacts`,
+`milvus-bucket`, and `loki-data`.
+
+If Argo CRDs are not installed yet, apply the MLOps Helm releases in Step 7.3 first,
+then re-run `kubectl apply -k kubernetes/` (or specifically `kubernetes/mlops/pipelines/`).
 
 ### 7.2 Deploy Observability Stack
 
@@ -373,6 +377,7 @@ helm repo add kuberay https://ray-project.github.io/kuberay-helm/
 helm repo add milvus https://milvus-io.github.io/milvus-helm
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo add bentoml https://bentoml.github.io/yatai-chart
+helm repo add dagster https://dagster-io.github.io/helm
 helm repo update
 
 # Deploy KubeRay Operator (for Ray)
@@ -399,6 +404,47 @@ helm upgrade --install argo-workflows argo/argo-workflows \
   --namespace mlops \
   --create-namespace \
   -f kubernetes/mlops/argo-workflows/values.yaml
+
+# Deploy Argo Events CRDs/controller to satisfy Sensor/EventSource API discovery
+helm upgrade --install argo-events argo/argo-events \
+  --namespace mlops \
+  --create-namespace \
+  -f kubernetes/mlops/argo-events/values.yaml
+
+# Create default EventBus in mlops namespace
+kubectl apply -k kubernetes/mlops/argo-events/
+
+# Ensure Dagster baseline secret/config are applied
+kubectl apply -k kubernetes/mlops/dagster/
+
+# Deploy Dagster
+helm upgrade --install dagster dagster/dagster \
+  --namespace mlops \
+  --create-namespace \
+  -f kubernetes/mlops/dagster/values.yaml \
+  --set postgresql.postgresqlHost="$(kubectl get secret -n mlops dagster-postgresql -o jsonpath='{.data.host}' | base64 -d)" \
+  --set postgresql.service.port="$(kubectl get secret -n mlops dagster-postgresql -o jsonpath='{.data.port}' | base64 -d)" \
+  --set postgresql.postgresqlDatabase="$(kubectl get secret -n mlops dagster-postgresql -o jsonpath='{.data.database}' | base64 -d)" \
+  --set postgresql.postgresqlUsername="$(kubectl get secret -n mlops dagster-postgresql -o jsonpath='{.data.user}' | base64 -d)" \
+  --set postgresql.postgresqlPassword="$(kubectl get secret -n mlops dagster-postgresql -o jsonpath='{.data.password}' | base64 -d)"
+
+# Wait for Dagster webserver to become ready
+kubectl rollout status deployment/dagster-dagster-webserver -n mlops --timeout=240s
+
+# Optional: build and push pipeline runtime image, then enable Dagster user-code deployment
+# (default install uses a lightweight example user-code location for reliable reachability)
+docker build -f pipelines/Dockerfile -t ghcr.io/julianwiley/rpi-k8s-pipelines:latest .
+docker push ghcr.io/julianwiley/rpi-k8s-pipelines:latest
+helm upgrade --install dagster dagster/dagster \
+  --namespace mlops \
+  --create-namespace \
+  -f kubernetes/mlops/dagster/values.yaml \
+  -f kubernetes/mlops/dagster/values-pipelines-user-code.yaml
+
+# Apply Argo + Dagster pipeline recipes and bootstrap state tables
+kubectl apply -k kubernetes/mlops/pipelines/
+
+# See docs/data-pipeline-recipes.md for first-run commands for all five recipes
 
 # Ensure BentoML PostgreSQL and MinIO credentials are applied
 kubectl apply -f kubernetes/mlops/bentoml/secret.yaml
@@ -430,7 +476,7 @@ kubectl get svc -A | grep LoadBalancer
 
 # Ingress hosts (control.local, etc.) use the ingress-nginx LoadBalancer IP
 kubectl -n ingress get svc ingress-nginx-controller
-192.168.1.205  control.local
+192.168.1.205  control.local argo.local dagster.local yatai.local
 ```
 
 ## Step 10: Access Services
@@ -444,31 +490,108 @@ kubectl -n ingress get svc ingress-nginx-controller
 | Jaeger | http://jaeger.local:16686 | - |
 | MLFlow | http://mlflow.local:5000 | - |
 | JupyterHub | http://jupyter.local | admin / jupyter |
-| Argo Workflows | http://argo.local:2746 | - |
+| Argo Workflows | http://argo.local | - |
+| Dagster | http://dagster.local | - |
 | ChromaDB | http://chromadb.local:8000 | - |
 | Milvus | http://milvus.local:19530 | - |
 | BentoML/Yatai | http://yatai.local:3000 | - |
 | MinIO | http://minio.local:9001 | minioadmin / minioadmin123 |
 | Control Panel | http://control.local | - |
 
+### 10.1 Verify Argo and Dagster Telemetry
+
+```bash
+# Confirm ServiceMonitors are present
+kubectl get servicemonitor -n observability | grep -E "argo|dagster"
+
+# Check Prometheus scrape targets
+kubectl port-forward -n observability svc/prometheus-prometheus 9090:9090
+# Open http://127.0.0.1:9090/targets and verify Argo/Dagster targets are UP
+
+# Check OTLP telemetry path from Dagster webserver
+kubectl logs -n mlops deploy/dagster-dagster-webserver --tail=200
+# (Daemon logs are available when using values-pipelines-user-code.yaml)
+```
+
+In Grafana, open the pre-provisioned dashboard:
+`Workflow Orchestrators - Argo and Dagster`.
+
+### 10.2 Verify Pipeline Orchestrators End-to-End
+
+```bash
+# Verify Argo Events CRDs and default EventBus
+kubectl get crd sensors.argoproj.io eventsources.argoproj.io eventbus.argoproj.io
+kubectl get eventbus -n mlops
+
+# Verify workflow templates and schedules are installed
+kubectl get workflowtemplate -n mlops
+kubectl get cronworkflow -n mlops
+
+# Submit a raw ingest run
+argo submit --from workflowtemplate/pipeline-raw-ingest -n mlops \
+  -p source_type=http \
+  -p source_name=sample-http \
+  -p source_uri=https://example.com/data.json
+
+# Submit a CDC run
+argo submit --from workflowtemplate/pipeline-cdc-sync -n mlops \
+  -p pipeline_name=cdc-source-events \
+  -p source_table=source_events
+
+# Check Dagster core components
+kubectl get deploy -n mlops | grep dagster
+kubectl logs -n mlops deploy/dagster-dagster-webserver --tail=200
+
+# Confirm Argo server no longer reports Sensor/EventSource "NotFound" errors
+kubectl logs -n mlops deploy/argo-workflows-server --tail=200 | grep -E "sensors.argoproj.io|eventsources.argoproj.io" || true
+
+# Verify state tables exist in PostgreSQL
+kubectl exec -n data-services deploy/postgresql -- psql -U postgres -d dagster -c "\dt pipeline_*"
+```
+
+### 10.3 Verify DataHub Source Linking Jobs
+
+```bash
+# Confirm DataHub ingestion/bridge CronJobs exist (created suspended by default)
+kubectl get cronjob -n data-services | grep datahub-
+
+# Review dedicated ingestion config and secret objects
+kubectl get configmap -n data-services datahub-ingestion-settings datahub-ingestion-recipes datahub-metadata-bridge
+kubectl get secret -n data-services datahub-ingestion-secrets
+
+# IMPORTANT: set real values for DATAHUB_TOKEN / source credentials before unsuspending jobs
+kubectl edit secret -n data-services datahub-ingestion-secrets
+
+# Unsuspend and trigger a native source ingestion run (example: PostgreSQL)
+kubectl patch cronjob -n data-services datahub-ingest-postgres --type merge -p '{"spec":{"suspend":false}}'
+kubectl create job -n data-services --from=cronjob/datahub-ingest-postgres datahub-ingest-postgres-manual
+kubectl logs -n data-services job/datahub-ingest-postgres-manual
+
+# Run metadata bridge for Argo/Dagster/Milvus/Chroma
+kubectl patch cronjob -n data-services datahub-metadata-bridge --type merge -p '{"spec":{"suspend":false}}'
+kubectl create job -n data-services --from=cronjob/datahub-metadata-bridge datahub-metadata-bridge-manual
+kubectl logs -n data-services job/datahub-metadata-bridge-manual
+```
+
 Control panel access options:
 - Ingress: `http://control.local` (hosts entry required)
-- LoadBalancer: `http://<management-ui-external-ip>`
-- NodePort: `http://<node-ip>:30080`
+- LoadBalancer: `http://<management-ui-external-ip>:9280`
+- NodePort: `http://<node-ip>:31280`
 
 ## Step 11: Deploy Management Control Panel
 
 ```bash
-# Build and deploy backend
-cd management/backend
-docker build -t rpi-k8s-management:latest .
+# Apply management API/UI manifests
+# (UI uses public nginx image + in-cluster static control panel config)
+kubectl apply -f kubernetes/base-services/management/frontend.yaml
 
-# Build and deploy frontend
-cd ../frontend
-docker build -t rpi-k8s-control-panel:latest .
+# If you previously deployed legacy selector labels and apply fails,
+# recreate only the UI deployment and re-apply:
+kubectl delete deployment -n management management-ui --ignore-not-found
+kubectl apply -f kubernetes/base-services/management/frontend.yaml
 
-# Deploy to cluster
-kubectl apply -f kubernetes/management/
+# Verify rollout
+kubectl rollout status deployment/management-ui -n management --timeout=180s
 ```
 
 ## Troubleshooting
@@ -525,6 +648,51 @@ kubectl logs -n metallb-system -l app=metallb
 # Check ingress controller and class
 kubectl -n ingress get svc ingress-nginx-controller
 kubectl get ingressclass nginx
+```
+
+### Dagster release missing or `dagster.local` unavailable
+
+```bash
+# Verify Helm release presence
+helm list -n mlops | grep dagster
+
+# Re-apply required secrets
+kubectl apply -k kubernetes/mlops/dagster/
+
+# Install or upgrade Dagster baseline release
+helm upgrade --install dagster dagster/dagster \
+  --namespace mlops \
+  --create-namespace \
+  -f kubernetes/mlops/dagster/values.yaml
+
+# Verify webserver deployment, service, and ingress
+kubectl rollout status deployment/dagster-dagster-webserver -n mlops --timeout=240s
+kubectl get svc -n mlops dagster-dagster-webserver
+kubectl get ingress -n mlops dagster-ingress
+kubectl get pods -n mlops | grep dagster
+
+# If Dagster logs show postgres authentication failures, reconcile role password
+kubectl exec -n data-services deploy/postgresql -- \
+  psql -U postgres -d postgres -c "ALTER ROLE dagster WITH LOGIN PASSWORD 'dagster123';"
+```
+
+### Argo UI error: sensors.argoproj.io not found
+
+```bash
+# Install Argo Events CRDs/controller (required by Argo Workflows API discovery)
+helm upgrade --install argo-events argo/argo-events \
+  --namespace mlops \
+  --create-namespace \
+  -f kubernetes/mlops/argo-events/values.yaml
+
+# Ensure default EventBus exists
+kubectl apply -k kubernetes/mlops/argo-events/
+
+# Verify CRDs are registered
+kubectl get crd sensors.argoproj.io eventsources.argoproj.io eventbus.argoproj.io
+
+# Restart Argo server to refresh discovery cache if needed
+kubectl rollout restart deployment/argo-workflows-server -n mlops
 ```
 
 ### Logs not appearing in Loki / traces not appearing in Jaeger

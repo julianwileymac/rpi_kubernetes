@@ -1,0 +1,142 @@
+# =============================================================================
+# Dagster Helm Values
+# =============================================================================
+# Install with:
+#   helm repo add dagster https://dagster-io.github.io/helm
+#   helm repo update
+#   helm upgrade --install dagster dagster/dagster \
+#     --namespace mlops --create-namespace -f values.yaml
+# =============================================================================
+
+fullnameOverride: dagster
+
+global:
+  dagsterHome: /opt/dagster/dagster_home
+
+dagsterWebserver:
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 750m
+      memory: 1Gi
+
+  env:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "http://otel-collector.observability.svc.cluster.local:4317"
+    - name: OTEL_SERVICE_NAME
+      value: "dagster-webserver"
+    - name: OTEL_TRACES_EXPORTER
+      value: "otlp"
+    - name: OTEL_LOGS_EXPORTER
+      value: "otlp"
+    - name: AWS_ACCESS_KEY_ID
+      value: "minioadmin"
+    - name: AWS_SECRET_ACCESS_KEY
+      value: "minioadmin123"
+
+dagsterDaemon:
+  # Baseline mode keeps Dagster UI reachable without schedule/sensor processing.
+  # Enable in values-pipelines-user-code.yaml once a valid code location is configured.
+  enabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 750m
+      memory: 1Gi
+
+  env:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "http://otel-collector.observability.svc.cluster.local:4317"
+    - name: OTEL_SERVICE_NAME
+      value: "dagster-daemon"
+    - name: OTEL_TRACES_EXPORTER
+      value: "otlp"
+    - name: OTEL_LOGS_EXPORTER
+      value: "otlp"
+    - name: AWS_ACCESS_KEY_ID
+      value: "minioadmin"
+    - name: AWS_SECRET_ACCESS_KEY
+      value: "minioadmin123"
+
+# Baseline install keeps a lightweight example code location so Dagster starts
+# with a valid workspace. In-repo pipeline user code is enabled via
+# values-pipelines-user-code.yaml.
+dagster-user-deployments:
+  enabled: true
+  enableSubchart: true
+  deployments:
+    - name: bootstrap-user-code
+      image:
+        repository: docker.io/dagster/dagster-celery-k8s
+        tag: "1.12.21"
+        pullPolicy: IfNotPresent
+      dagsterApiGrpcArgs:
+        - "--python-file"
+        - "/opt/dagster/user_code/definitions.py"
+      port: 3030
+      includeConfigInLaunchedRuns:
+        enabled: true
+      volumes:
+        - name: bootstrap-user-code
+          configMap:
+            name: dagster-bootstrap-user-code
+      volumeMounts:
+        - name: bootstrap-user-code
+          mountPath: /opt/dagster/user_code/definitions.py
+          subPath: definitions.py
+
+scheduler:
+  type: DagsterDaemonScheduler
+
+runLauncher:
+  type: K8sRunLauncher
+  config:
+    k8sRunLauncher:
+      jobNamespace: mlops
+      loadInclusterConfig: true
+      envVars:
+        - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4317
+        - OTEL_TRACES_EXPORTER=otlp
+        - OTEL_LOGS_EXPORTER=otlp
+        - AWS_ACCESS_KEY_ID=minioadmin
+        - AWS_SECRET_ACCESS_KEY=minioadmin123
+
+# Use existing cluster PostgreSQL instead of the chart subchart.
+postgresql:
+  enabled: false
+  postgresqlHost: postgresql.data-services.svc.cluster.local
+  postgresqlDatabase: dagster
+  postgresqlUsername: dagster
+  postgresqlPassword: dagster123
+  service:
+    port: 5432
+
+# Persist Dagster compute logs in MinIO (S3-compatible).
+computeLogManager:
+  type: S3ComputeLogManager
+  config:
+    s3ComputeLogManager:
+      bucket: dagster-artifacts
+      endpointUrl: http://minio.data-services.svc.cluster.local:9000
+      useSsl: false
+      verify: false
+      prefix: dagster-compute-logs
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  dagsterWebserver:
+    host: dagster.local
+    path: /
+    pathType: Prefix

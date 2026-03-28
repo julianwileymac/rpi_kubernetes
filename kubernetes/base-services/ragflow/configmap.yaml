@@ -1,0 +1,41 @@
+# =============================================================================
+# RAGFlow Service Configuration Override
+# =============================================================================
+# Mounted at /ragflow/conf/local.service_conf.yaml inside the container.
+# RAGFlow merges this with its default config at startup.
+# The "mysql:" key is used even when DB_TYPE=postgres -- it provides
+# connection parameters to the Peewee ORM which switches drivers via env.
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ragflow-service-config
+  namespace: data-services
+  labels:
+    app: ragflow
+data:
+  local.service_conf.yaml: |
+    ragflow:
+      host: 0.0.0.0
+      http_port: 9380
+    mysql:
+      name: ragflow
+      user: ragflow
+      password: ragflow123
+      host: postgresql.data-services.svc.cluster.local
+      port: 5432
+      max_connections: 50
+      stale_timeout: 30
+    minio:
+      user: minioadmin
+      password: minioadmin123
+      host: minio.data-services.svc.cluster.local:9000
+    es:
+      hosts: http://elasticsearch-master.data-services.svc.cluster.local:9200
+      username: elastic
+      password: ""
+    redis:
+      db: 1
+      password: ragflow123
+      host: ragflow-redis.data-services.svc.cluster.local

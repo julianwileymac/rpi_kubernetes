@@ -103,6 +103,7 @@ Grafana provides unified dashboards for all observability data:
 - MinIO Metrics
 - Ray Metrics
 - MLFlow Metrics
+- Workflow Orchestrators - Argo and Dagster
 
 ## OpenTelemetry Collector
 

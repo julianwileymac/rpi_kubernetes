@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datahub-ingestion-settings
+  namespace: data-services
+  labels:
+    app.kubernetes.io/name: datahub
+    app.kubernetes.io/component: metadata-ingestion
+data:
+  DATAHUB_GMS_SERVER: "http://datahub-datahub-gms.data-services.svc.cluster.local:8080"
+  DATAHUB_ENV: "PROD"
+
+  # Native ingestion source coordinates (non-secret values only).
+  INGEST_POSTGRES_HOST_PORT: "postgresql.data-services.svc.cluster.local:5432"
+  INGEST_POSTGRES_DATABASE: "dagster"
+  INGEST_MINIO_ENDPOINT: "minio.data-services.svc.cluster.local:9000"
+  INGEST_MINIO_REGION: "us-east-1"
+  INGEST_MLFLOW_TRACKING_URI: "http://mlflow.data-services.svc.cluster.local:5000"
+
+  # Metadata bridge source lists.
+  ARGO_WORKFLOWTEMPLATES: "pipeline-raw-ingest,pipeline-heavy-transform,pipeline-vector-sync,pipeline-cdc-sync"
+  ARGO_CRONWORKFLOWS: "pipeline-raw-ingest-hourly,pipeline-cdc-sync-hourly"
+  DAGSTER_ASSETS: "minio_to_postgres_curated,vectorize_to_milvus_chroma,cdc_incremental_sync,hybrid_argo_heavy_transform"
+  MILVUS_COLLECTIONS: "pipeline_documents"
+  CHROMA_COLLECTIONS: "pipeline_documents"

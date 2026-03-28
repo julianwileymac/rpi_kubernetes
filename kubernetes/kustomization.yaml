@@ -32,6 +32,7 @@ resources:
   - base-services/dask-ray/
   - base-services/management/
   - base-services/chromadb/
+  - base-services/ragflow/
   - base-services/datahub/
   
   # Observability stack
@@ -42,6 +43,8 @@ resources:
   
   # MLOps
   - mlops/argo-workflows/
+  - mlops/dagster/
+  - mlops/pipelines/
   - mlops/bentoml/
   
   # Note: kube-prometheus-stack (Grafana/Prometheus), Loki, Milvus deployed via Helm separately.

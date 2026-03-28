@@ -38,6 +38,7 @@ spec:
               mc mb --ignore-existing minio/milvus-bucket
               mc mb --ignore-existing minio/argo-workflows
               mc mb --ignore-existing minio/bentoml-artifacts
+              mc mb --ignore-existing minio/dagster-artifacts
               mc mb --ignore-existing minio/iceberg-warehouse
               mc mb --ignore-existing minio/loki-data
 

@@ -22,6 +22,15 @@ helm upgrade --install argo-workflows argo/argo-workflows \
   --namespace mlops \
   --create-namespace \
   -f values.yaml
+
+# Install Argo Events CRDs/controller to avoid Sensor/EventSource NotFound errors
+helm upgrade --install argo-events argo/argo-events \
+  --namespace mlops \
+  --create-namespace \
+  -f ../argo-events/values.yaml
+
+# Create a default EventBus
+kubectl apply -k ../argo-events/
 ```
 
 ## Access
@@ -121,21 +130,52 @@ Workflows can log experiments to MLFlow:
 
 Workflows store artifacts in MinIO. Access artifacts via the Argo UI or MinIO console.
 
+## Packaged Pipeline Templates
+
+Reusable workflow templates and schedules for ingestion, hybrid transforms, vector sync,
+and CDC are included under:
+`kubernetes/mlops/pipelines/`
+
+Apply them with:
+
+```bash
+kubectl apply -k kubernetes/mlops/pipelines/
+```
+
 ## Monitoring
 
-Argo Workflows exposes Prometheus metrics. Create a ServiceMonitor to scrape metrics:
+Argo Workflows exposes Prometheus metrics. The repository includes a ServiceMonitor in
+`kubernetes/observability/prometheus/servicemonitors.yaml` to scrape controller metrics.
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: argo-workflows
-  namespace: mlops
+  name: argo-workflows-controller
+  namespace: observability
 spec:
+  namespaceSelector:
+    matchNames:
+      - mlops
   selector:
     matchLabels:
       app: argo-workflows-controller-metrics
   endpoints:
     - port: metrics
+      path: /metrics
       interval: 30s
+```
+
+## Troubleshooting Argo API Discovery Errors
+
+If Argo UI/API shows:
+`Not Found: the server could not find the requested resource (get sensors.argoproj.io)`
+
+Run:
+
+```bash
+kubectl get crd sensors.argoproj.io eventsources.argoproj.io eventbus.argoproj.io
+helm status argo-events -n mlops
+kubectl get eventbus -n mlops
+kubectl rollout restart deployment/argo-workflows-server -n mlops
 ```

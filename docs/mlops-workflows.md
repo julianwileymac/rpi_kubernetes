@@ -1,12 +1,13 @@
 # MLOps Workflows Guide
 
-This guide covers Argo Workflows and BentoML for ML pipeline orchestration and model serving.
+This guide covers Argo Workflows, Dagster, and BentoML for ML and data orchestration plus model serving.
 
 ## Overview
 
-The cluster provides two key MLOps tools:
+The cluster provides three key MLOps tools:
 
 - **Argo Workflows** - Kubernetes-native workflow engine for ML pipelines
+- **Dagster** - Data and asset orchestration platform
 - **BentoML / Yatai** - Model serving and deployment platform
 
 ## Argo Workflows
@@ -22,7 +23,28 @@ The cluster provides two key MLOps tools:
 ### Access
 
 - **Internal**: `http://argo-workflows-server.mlops:2746`
-- **External**: `http://argo.local:2746`
+- **External**: `http://argo.local`
+
+### Workflows vs Events (Important)
+
+- **Argo Workflows** provides `Workflow`, `WorkflowTemplate`, and `CronWorkflow`.
+- **Argo Events** provides `Sensor`, `EventSource`, and `EventBus`.
+
+Argo Workflows UI/API may still query Argo Events resource discovery. If Argo Events
+CRDs are missing, you can see:
+`Not Found: the server could not find the requested resource (get sensors.argoproj.io)`.
+
+Install Argo Events and a default EventBus:
+
+```bash
+helm upgrade --install argo-events argo/argo-events \
+  --namespace mlops \
+  --create-namespace \
+  -f kubernetes/mlops/argo-events/values.yaml
+
+kubectl apply -k kubernetes/mlops/argo-events/
+kubectl get crd sensors.argoproj.io eventsources.argoproj.io eventbus.argoproj.io
+```
 
 ### Basic Workflow Example
 
@@ -172,6 +194,73 @@ spec:
     # ... templates ...
 ```
 
+## Dagster
+
+### Use Cases
+
+- Data pipeline orchestration with software-defined assets
+- Scheduled orchestration and event-driven automation
+- Backfills and partition-aware data processing
+- Cross-service workflows that launch Kubernetes jobs
+
+### Access
+
+- **Internal**: `http://dagster-webserver.mlops`
+- **External**: `http://dagster.local`
+
+### Runtime Integration
+
+- Dagster webserver and daemon run in `mlops` namespace.
+- Dagster metadata is stored in PostgreSQL (`postgresql.data-services.svc.cluster.local`).
+- Dagster compute logs use MinIO (`dagster-artifacts` bucket).
+- Telemetry is exported to OpenTelemetry Collector over OTLP.
+
+### Pipeline Recipes (Implemented)
+
+The repository now ships runnable MVP recipes under:
+`kubernetes/mlops/pipelines/` and Python runtime code in `pipelines/`.
+
+#### 1) Argo raw ingest (HTTP/REST/S3/filesystem -> MinIO)
+
+```bash
+argo submit --from workflowtemplate/pipeline-raw-ingest -n mlops \
+  -p source_type=http \
+  -p source_name=sample-http \
+  -p source_uri=https://example.com/data.json
+```
+
+#### 2) Dagster asset load (MinIO -> PostgreSQL)
+
+Dagster asset: `minio_to_postgres_curated` in
+`pipelines/dagster_user_code/assets.py`.
+
+#### 3) Hybrid orchestration (Dagster -> Argo heavy transform)
+
+Dagster asset: `hybrid_argo_heavy_transform` submits template
+`pipeline-heavy-transform` and reports workflow status.
+
+#### 4) Vector sync (MinIO -> Milvus + ChromaDB + PostgreSQL audit)
+
+```bash
+argo submit --from workflowtemplate/pipeline-vector-sync -n mlops \
+  -p source_key=processed/heavy/sample.json \
+  -p collection_name=pipeline_documents
+```
+
+#### 5) CDC incremental sync (PostgreSQL source -> MinIO + sink tables)
+
+```bash
+argo submit --from workflowtemplate/pipeline-cdc-sync -n mlops \
+  -p pipeline_name=cdc-source-events \
+  -p source_table=source_events
+```
+
+Production-hardening TODOs are included directly in manifests/code comments for:
+- retry/backoff and dead-letter handling
+- source pagination and replay windows
+- embedding model version pinning and re-embedding strategy
+- credential externalization and image digest pinning
+
 ## BentoML / Yatai
 
 ### Use Cases
@@ -185,7 +274,7 @@ spec:
 ### Access
 
 - **Internal**: `http://yatai.ml-platform:3000`
-- **External**: `http://yatai.local:3000`
+- **External**: `http://yatai.local`
 
 ### Creating a Bento Service
 
@@ -377,16 +466,29 @@ Argo Workflows exposes Prometheus metrics. Create a ServiceMonitor:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: argo-workflows
-  namespace: mlops
+  name: argo-workflows-controller
+  namespace: observability
 spec:
+  namespaceSelector:
+    matchNames:
+      - mlops
   selector:
     matchLabels:
       app: argo-workflows-controller-metrics
   endpoints:
     - port: metrics
+      path: /metrics
       interval: 30s
 ```
+
+### Dagster Telemetry
+
+Dagster is configured with OTLP environment variables and sends telemetry to:
+`otel-collector.observability.svc.cluster.local:4317`.
+
+If your Dagster image exposes Prometheus metrics on `/metrics`, keep the
+`dagster-webserver` ServiceMonitor in `kubernetes/observability/prometheus/servicemonitors.yaml`
+enabled for pull-based dashboards.
 
 ### BentoML Service Metrics
 
@@ -436,7 +538,9 @@ kubectl get endpoints -n ml-platform
 
 ## Additional Resources
 
+- [Data Pipeline Recipes](data-pipeline-recipes.md)
 - [Argo Workflows Documentation](https://argoproj.github.io/argo-workflows/)
+- [Dagster Documentation](https://docs.dagster.io/)
 - [BentoML Documentation](https://docs.bentoml.com/)
 - [MLFlow Documentation](https://mlflow.org/docs/latest/index.html)
 - [Ray Documentation](https://docs.ray.io/)

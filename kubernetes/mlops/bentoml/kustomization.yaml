@@ -12,5 +12,6 @@ namespace: ml-platform
 
 resources:
   - secret.yaml
+  - ingress.yaml
   # Note: BentoML/Yatai is deployed via Helm
   # See README.md for installation instructions

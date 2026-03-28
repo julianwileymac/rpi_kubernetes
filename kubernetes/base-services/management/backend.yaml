@@ -55,15 +55,28 @@ kind: Deployment
 metadata:
   name: management-api
   namespace: management
+  labels:
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: management-api
+      app.kubernetes.io/name: management
+      app.kubernetes.io/component: control-panel
+      app.kubernetes.io/part-of: rpi-k8s-platform
+      app.kubernetes.io/managed-by: rpi-k8s-cluster
   template:
     metadata:
       labels:
         app: management-api
+        app.kubernetes.io/name: management
+        app.kubernetes.io/component: control-panel
+        app.kubernetes.io/part-of: rpi-k8s-platform
+        app.kubernetes.io/managed-by: rpi-k8s-cluster
     spec:
       serviceAccountName: management-api
       containers:
@@ -112,6 +125,11 @@ kind: Service
 metadata:
   name: management-api
   namespace: management
+  labels:
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
 spec:
   type: ClusterIP
   ports:
@@ -121,3 +139,7 @@ spec:
       protocol: TCP
   selector:
     app: management-api
+    app.kubernetes.io/name: management
+    app.kubernetes.io/component: control-panel
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
