@@ -2,15 +2,58 @@
 
 This guide covers how to extend the RPi Kubernetes cluster framework with custom services, integrations, and plugins.
 
+## Caching, vector search, and agent memory (Redis 8 Stack)
+
+The framework ships a shared Redis 8 Stack deployment used by the
+management API, the [Document Store portal](document-store.md),
+LangGraph agents, and the pipelines package.  See
+[redis-stack.md](redis-stack.md) for full details; the short version:
+
+```python
+from pipelines.redis_cache import cache_aside, SemanticCache
+from pipelines.redis_vectors import ensure_index, upsert_chunks, vector_search
+from pipelines.agent_memory import get_checkpointer, get_store
+from pipelines.redis_om_models import DocumentRecord, ensure_migrated
+
+# Cache-aside for any function (ttl in seconds, namespace controls invalidation)
+@cache_aside(ttl=60, namespace="my_module")
+def expensive(x: int) -> dict: ...
+
+# Vector store
+ensure_index("idx:my_chunks", vector_dims=384)
+upsert_chunks("idx:my_chunks", records=[...])
+hits = vector_search("idx:my_chunks", query_vector=[...], top_k=5)
+
+# LLM semantic cache (RedisVL)
+sc = SemanticCache(name="my_llm_cache", distance_threshold=0.15)
+hit = sc.check("What is X?")
+if not hit: sc.store("What is X?", "...response...")
+
+# LangGraph agent memory
+checkpointer = get_checkpointer()
+store = get_store(vector_dims=1536)
+
+# Redis OM models for typed Python objects
+ensure_migrated()
+doc = DocumentRecord(title="Notes", collection="manuals", source="upload")
+doc.save()
+```
+
+All of the above are wrapped in OpenTelemetry spans (visible in Jaeger
+under `redis.*`) and increment Prometheus counters
+(`rpi_redis_ops_total`, `rpi_redis_op_seconds`).
+
 ## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     Management Layer                                 │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
-│  │  Control Panel  │  │  FastAPI Backend │  │  OTEL Collector    │  │
-│  │  (Next.js)      │◄─►│  (Python)        │◄─►│  (Telemetry)       │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────┘  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │
+│  │Control Panel│  │  FastAPI    │  │  Python SDK │  │  OTEL      │  │
+│  │ (Next.js)   │◄►│  Backend    │◄►│ (streaming) │  │ Collector  │  │
+│  │             │  │ /kafka      │  │ AvroProducer│  │ (Telemetry)│  │
+│  │             │  │ /flink      │  │ FlinkClient │  │            │  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -22,6 +65,17 @@ This guide covers how to extend the RPi Kubernetes cluster framework with custom
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │
 │  │ Prometheus  │ │   Grafana   │ │    Dask     │ │     Ray     │   │
 │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │
+│  │ Kafka       │ │ Kafka       │ │ Apicurio    │ │ VictoriaM.  │   │
+│  │ (Strimzi)   │ │ Connect/    │ │ Registry    │ │             │   │
+│  │             │ │ Bridge/MM2  │ │             │ │             │   │
+│  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └─────────────┘   │
+│         │               │               │                            │
+│  ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐                    │
+│  │ Flink       │ │ Flink       │ │ Flink       │                    │
+│  │ Operator    │ │ Session     │ │ TA-Lib Jobs │                    │
+│  │             │ │ (PyFlink)   │ │ (Java)      │                    │
+│  └─────────────┘ └─────────────┘ └─────────────┘                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -302,6 +356,42 @@ spec:
       - mr
 ```
 
+## Kafka + Flink Control Plane
+
+The management backend exposes `/kafka` and `/flink` routers (see
+[`management-api.md`](./management-api.md)) for declarative control of
+Strimzi CRDs and Flink jobs:
+
+```bash
+# List every KafkaTopic CR
+curl http://control.local/api/kafka/topics
+
+# Activate a suspended FlinkSessionJob
+curl -XPOST http://control.local/api/flink/sessionjobs/indicators-momentum/activate
+
+# Scale a running job
+curl -XPOST http://control.local/api/flink/sessionjobs/indicator-compute/scale?parallelism=4
+```
+
+The [Python SDK](../management/sdk/) wraps these endpoints plus direct
+Kafka IO:
+
+```python
+from rpi_k8s_sdk import configure_tracing
+from rpi_k8s_sdk.kafka import AvroProducer
+from rpi_k8s_sdk.flink import ManagementFlinkClient
+
+configure_tracing("my-pipeline")
+with AvroProducer(bootstrap="...", username="producer-market", password=...) as p:
+    p.produce(topic="market.trade.v1", schema="market_trade_v1", record={...}, key="AAPL")
+
+ManagementFlinkClient("http://control.local/api").activate("indicators-momentum")
+```
+
+See [`docs/kafka-clients.md`](./kafka-clients.md) for the Python + Java client
+templates under [`templates/`](../templates/) and the bundled samples under
+[`samples/market-data-producers/`](../samples/market-data-producers/).
+
 ## Integration with agentic_assistants
 
 The cluster is designed to integrate with the `agentic_assistants` framework:
@@ -419,6 +509,40 @@ class DeploymentPlugin(Plugin):
         """Get deployment status."""
         pass
 ```
+
+## Adding a new Alpha Vantage endpoint
+
+The AV integration follows a layered design: add the endpoint to the client
+library once, then everything above it reuses the typed response.
+
+1. **Client library**: add a method (and an async twin) to the matching
+   `integrations/alphavantage/src/alphavantage_client/endpoints/*.py`.
+   Parse the AV response into the appropriate Pydantic model from
+   `models/`. Add a default TTL to `_cache.default_ttl` if the data is
+   immutable.
+2. **Re-export**: if the response is a new model, add it to
+   `alphavantage_client/models/__init__.py` and bump the reference in
+   `management/backend/src/models/alphavantage.py`.
+3. **Backend**: add a `service.xxx(...)` method in
+   `management/backend/src/services/alphavantage_service.py` and a route in
+   `management/backend/src/api/alphavantage.py`. Follow the existing
+   `ValueError -> HTTPException(400)` and `Exception -> HTTPException(500)`
+   patterns.
+4. **Frontend**: extend `alphaVantageApi` in
+   `management/frontend/src/lib/api.ts` with a typed TS wrapper; add the UI
+   under `management/frontend/src/app/alphavantage/...`.
+5. **Streaming (optional)**: if the endpoint should be polled, add a stream
+   coroutine in `templates/alphavantage-producer/src/alphavantage_producer/streams.py`
+   and register it in `STREAMS`. Add a matching Avro schema under
+   `flink-jobs/jobs/schemas/alphavantage/` and a new KafkaTopic.
+6. **Batch (optional)**: extend `pipelines/alphavantage_io.py::_LOADERS`
+   with a new category + loader function, then author a WorkflowTemplate
+   at `kubernetes/mlops/pipelines/alphavantage/` that delegates to
+   `av-bulk` with the right `category` + `extra_params`.
+
+The rate limiter, retry policy, and cache apply automatically to every new
+endpoint as long as it routes through `client._sync_request` /
+`client._async_request`.
 
 ## Best Practices
 

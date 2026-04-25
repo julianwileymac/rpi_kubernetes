@@ -114,6 +114,57 @@ def chromadb_vector_search(
     return search_results
 
 
+def redis_vector_search(
+    index_name: str,
+    query_vector: list[float],
+    top_k: int = 10,
+    filters: str | None = None,
+) -> list[SearchResult]:
+    """Dense vector search against a Redis 8 Stack RediSearch index.
+
+    Delegates to :mod:`pipelines.redis_vectors` and reshapes the hits
+    into :class:`SearchResult` so callers can mix-and-match with
+    Milvus/ChromaDB results in hybrid search or RRF.
+    """
+    from . import redis_vectors
+
+    hits = redis_vectors.vector_search(
+        index_name=index_name,
+        query_vector=query_vector,
+        top_k=top_k,
+        filters=filters,
+    )
+    return [
+        SearchResult(
+            text=hit.text,
+            score=float(hit.score),
+            metadata={**hit.metadata, "redis_rank": rank, "id": hit.id},
+        )
+        for rank, hit in enumerate(hits)
+    ]
+
+
+def hybrid_search_redis(
+    index_name: str,
+    query: str,
+    query_vector: list[float],
+    corpus: list[str] | None = None,
+    top_k: int = 10,
+    filters: str | None = None,
+) -> list[SearchResult]:
+    """Hybrid search combining BM25 + Redis dense retrieval via RRF."""
+    vector_results = redis_vector_search(
+        index_name=index_name,
+        query_vector=query_vector,
+        top_k=top_k,
+        filters=filters,
+    )
+    if corpus:
+        bm25_results = bm25_search(query=query, corpus=corpus, top_k=top_k)
+        return reciprocal_rank_fusion(vector_results, bm25_results, top_k=top_k)
+    return vector_results
+
+
 def reciprocal_rank_fusion(
     *result_lists: list[SearchResult],
     k: int = 60,

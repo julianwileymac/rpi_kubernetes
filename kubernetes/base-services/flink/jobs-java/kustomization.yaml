@@ -1,0 +1,24 @@
+# =============================================================================
+# Kustomization - Java TA-Lib FlinkSessionJobs (all suspended by default)
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: flink
+
+resources:
+  - overlap.yaml
+  - momentum.yaml
+  - volume.yaml
+  - volatility.yaml
+  - price-transform.yaml
+  - cycle.yaml
+  - statistic.yaml
+  - patterns.yaml
+  - math-transform.yaml
+  - math-operator.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: rpi-k8s-platform
+  app.kubernetes.io/component: flink-java-indicator-job

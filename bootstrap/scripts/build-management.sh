@@ -141,10 +141,13 @@ ok "Repository found at: $REPO_DIR"
 if $BUILD_BACKEND; then
     step "Building backend image: $BACKEND_IMAGE"
 
-    cd "$REPO_DIR/$BACKEND_DIR"
+    # The backend Dockerfile copies integrations/alphavantage/ from the repo root,
+    # so the build context MUST be the repo root (not management/backend).
+    cd "$REPO_DIR"
     info "Context: $(pwd)"
+    info "Dockerfile: $BACKEND_DIR/Dockerfile"
 
-    if docker build -t "$BACKEND_IMAGE" .; then
+    if docker build -f "$BACKEND_DIR/Dockerfile" -t "$BACKEND_IMAGE" .; then
         ok "Backend image built successfully"
     else
         fail "Backend image build failed"

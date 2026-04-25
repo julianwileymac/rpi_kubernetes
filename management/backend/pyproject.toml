@@ -22,11 +22,19 @@ dependencies = [
     "opentelemetry-api>=1.22.0",
     "opentelemetry-sdk>=1.22.0",
     "opentelemetry-instrumentation-fastapi>=0.43b0",
+    "opentelemetry-instrumentation-redis>=0.43b0",
     "opentelemetry-exporter-otlp>=1.22.0",
     "prometheus-client>=0.19.0",
     "python-multipart>=0.0.6",
     "PyYAML>=6.0.1",
     "asyncssh>=2.14.2",
+    "boto3>=1.35.0",
+    "aiofiles>=24.1.0",
+    "redis>=5.2.1",
+    "redisvl>=0.5.1",
+    "redis-om>=0.3.5",
+    # alphavantage-client is installed from integrations/alphavantage via the
+    # Dockerfile (pip install -e) and during local dev via scripts/bootstrap.
 ]
 
 [project.optional-dependencies]

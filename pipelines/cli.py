@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict
 from typing import Any
 
 from .config import PipelineConfig
@@ -55,6 +56,25 @@ def build_parser() -> argparse.ArgumentParser:
     cdc.add_argument("--batch-size", type=int, default=500)
     cdc.add_argument("--output-prefix", default="cdc")
     cdc.add_argument("--output-bucket", default=None)
+
+    av = subparsers.add_parser(
+        "alphavantage-bulk",
+        help="Bulk-load Alpha Vantage data into MinIO via the custom client engine.",
+    )
+    av.add_argument("--category", required=True,
+                    help="timeseries|intraday-backfill|fundamentals|universe|news|earnings|"
+                         "fx|crypto|commodities|economics|technicals|bulk")
+    av.add_argument("--symbols", default="",
+                    help="Comma-separated tickers / commodity names / indicators.")
+    av.add_argument("--start-date", default=None, help="YYYY-MM-DD or YYYY-MM")
+    av.add_argument("--end-date", default=None, help="YYYY-MM-DD or YYYY-MM")
+    av.add_argument("--target-bucket", default="av-raw")
+    av.add_argument("--target-prefix", default="")
+    av.add_argument("--extra-params", default=None,
+                    help="JSON-encoded extra parameters passed to the loader.")
+    av.add_argument("--api-key-file", default=None)
+    av.add_argument("--cache-backend", default="memory",
+                    choices=("memory", "sqlite", "redis", "none"))
 
     return parser
 
@@ -130,6 +150,30 @@ def main() -> None:
                 output_bucket=args.output_bucket,
             )
         )
+        return
+
+    if args.command == "alphavantage-bulk":
+        from .alphavantage_io import run_bulk_load
+
+        symbols = [s.strip() for s in (args.symbols or "").split(",") if s.strip()]
+        extra = json.loads(args.extra_params) if args.extra_params else {}
+        date_range: dict[str, str] = {}
+        if args.start_date:
+            date_range["start"] = args.start_date
+        if args.end_date:
+            date_range["end"] = args.end_date
+        result = run_bulk_load(
+            config=config,
+            category=args.category,
+            symbols=symbols,
+            date_range=date_range or None,
+            extra_params=extra,
+            target_bucket=args.target_bucket,
+            target_prefix=args.target_prefix,
+            api_key_file=args.api_key_file,
+            cache_backend=args.cache_backend,
+        )
+        _print_result(asdict(result))
         return
 
     raise RuntimeError(f"Unknown command {args.command}")

@@ -141,3 +141,31 @@ def upsert_milvus(
     collection.flush()
     return len(records)
 
+
+def upsert_redis(
+    index_name: str,
+    records: list[dict[str, Any]],
+    *,
+    embedding_dim: int = 16,
+    metric: str = "cosine",
+    algorithm: str = "HNSW",
+) -> int:
+    """Upsert chunk records into the shared Redis 8 Stack vector store.
+
+    Delegates to :mod:`pipelines.redis_vectors` which owns the
+    RediSearch + RedisJSON schema.  The function parallels
+    ``upsert_milvus`` / ``upsert_chromadb`` so code can pick a backend
+    via configuration (``VECTOR_BACKEND=redis|milvus|chromadb``).
+    """
+    if not records:
+        return 0
+    from . import redis_vectors  # local import keeps module import cheap
+
+    redis_vectors.ensure_index(
+        index_name,
+        vector_dims=embedding_dim,
+        metric=metric,
+        algorithm=algorithm,
+    )
+    return redis_vectors.upsert_chunks(index_name, records)
+

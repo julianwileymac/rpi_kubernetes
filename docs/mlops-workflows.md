@@ -1,14 +1,15 @@
 # MLOps Workflows Guide
 
-This guide covers Argo Workflows, Dagster, and BentoML for ML and data orchestration plus model serving.
+This guide covers Argo Workflows, Dagster, BentoML, and Apache Flink for ML and data orchestration, model serving, and real-time stream processing.
 
 ## Overview
 
-The cluster provides three key MLOps tools:
+The cluster provides four key MLOps and data processing tools:
 
 - **Argo Workflows** - Kubernetes-native workflow engine for ML pipelines
 - **Dagster** - Data and asset orchestration platform
 - **BentoML / Yatai** - Model serving and deployment platform
+- **Apache Flink** - Distributed stream processing for real-time trading data
 
 ## Argo Workflows
 
@@ -536,6 +537,214 @@ kubectl get deployments -n ml-platform
 kubectl get endpoints -n ml-platform
 ```
 
+## Apache Flink (Stream Processing)
+
+### Overview
+
+Apache Flink provides real-time stream processing for the algorithmic trading pipeline. It consumes market data from Kafka, computes technical indicators and normalized features, and writes to multiple sinks (PostgreSQL, MinIO, VictoriaMetrics, and downstream Kafka topics for backtesting and ML inference).
+
+### Architecture
+
+Market data is produced by either the sample producers under
+[`samples/market-data-producers/`](../samples/market-data-producers/) or the
+external **agentic_quant_platform** ingesters (`IBKRIngester`,
+`AlpacaIngester`). Records land on twelve canonical Avro-schemed topics.
+Two runtimes process the stream in parallel: **PyFlink** for the MVP set
+and **Java Flink + TA-Lib** for the full indicator catalog.
+
+```
+IBKR / Alpaca / Polygon / yfinance / synthetic                 Java sample
+               │                                                    │
+               └──────────── Strimzi Kafka ───────────── Apicurio Registry
+                                 (data-services)             (Avro schemas)
+               │
+               ▼
+  market.trade.v1   market.quote.v1   market.bar.v1
+  market.snapshot.v1  market.scanner.v1  market.contract.v1
+  market.imbalance.v1  market.status.v1  market.correction.v1
+               │
+   ┌───────────┴───────────┐
+   ▼                       ▼
+PyFlink jobs         Java TA-Lib jobs (full catalog)
+├─ dedupe            ├─ indicators-overlap (SMA, EMA, BBANDS, SAR, ...)
+├─ indicator_compute ├─ indicators-momentum (RSI, MACD, ADX, STOCH*, ...)
+├─ normalize_sink    ├─ indicators-volume (AD, ADOSC, OBV)
+└─ scanner_alert     ├─ indicators-volatility (ATR, NATR, TRANGE)
+                     ├─ indicators-price-transform
+                     ├─ indicators-cycle (HT_DCPERIOD, HT_PHASOR, ...)
+                     ├─ indicators-statistic (LINEARREG, CORREL, STDDEV)
+                     ├─ indicators-patterns (61 CDL* candlestick patterns)
+                     ├─ indicators-math-transform (ACOS ... TANH)
+                     └─ indicators-math-operator (ADD, MIN, MAX, SUM, ...)
+               │
+               ▼
+  features.indicators.v1 + features.normalized.v1 + features.signals.v1
+               │
+   ┌───────────┼────────────┐
+   ▼           ▼            ▼
+ Kafka       KafkaDataFeed  Kafka Connect
+ Bridge      (aqp.trading)  S3 / JDBC sinks
+               │
+               ▼
+ strategies / paper trader / /live WS / Dagster materializations
+```
+
+Full architecture: see [docs/ta-indicators.md](./ta-indicators.md) for the
+per-category indicator mapping and
+[agentic_quant_platform/docs/streaming.md](https://github.com/julianwiley/agentic_quant_platform/blob/main/docs/streaming.md)
+for the upstream producer patterns.
+
+### Access
+
+- **Flink Web UI**: `http://flink.local` (via ingress) or `kubectl port-forward -n flink svc/flink-trading-rest 8081:8081`
+- **Kafka Bootstrap**: `trading-kafka-kafka-bootstrap.data-services.svc.cluster.local:9092` (internal only)
+
+### Deployment Model
+
+Flink runs as a **Session Cluster** managed by the Flink Kubernetes Operator. The operator watches the `flink` namespace and manages `FlinkDeployment` and `FlinkSessionJob` custom resources.
+
+- **JobManager**: 1 replica, 1Gi memory, on control plane
+- **TaskManagers**: 2 replicas, 1.5Gi memory each, spread across workers
+- **State Backend**: RocksDB with incremental checkpoints stored in MinIO
+- **High Availability**: Kubernetes-based HA with leader election
+
+### Kafka Topics
+
+| Topic | Partitions | Retention | Purpose |
+|-------|-----------|-----------|---------|
+| `market.trade.v1` | 12 | 1d | Tick-level trades (IBKR tickByTick + Alpaca trades) |
+| `market.quote.v1` | 12 | 1d | Tick-level NBBO quotes |
+| `market.bar.v1` | 6 | 7d | 5s/1m/1d OHLCV bars |
+| `market.snapshot.v1` | 6 | 7d | IBKR `reqMktData` tick map (delayed + live) |
+| `market.scanner.v1` | 3 | 7d | IBKR `reqScannerSubscription` rows |
+| `market.contract.v1` | 1 | compacted | IBKR `reqContractDetails` metadata |
+| `market.imbalance.v1` | 3 | 7d | Alpaca order imbalances |
+| `market.status.v1` | 3 | 7d | Halts / LULDs / trading status |
+| `market.correction.v1` | 3 | 7d | Alpaca trade corrections and cancels |
+| `features.indicators.v1` | 6 | 30d | Per-symbol SMA/EMA/RSI/MACD/... |
+| `features.normalized.v1` | 6 | 30d | Z-score normalized feature vectors |
+| `features.signals.v1` | 6 | 30d | Strategy-ready trading signals |
+| `market.deadletter.v1` | 1 | 30d | Producer-failure fallback |
+
+### FlinkSessionJob Manifests
+
+Session job CRs ship in two directories:
+
+- [`kubernetes/base-services/flink/jobs/`](../kubernetes/base-services/flink/jobs/) -- PyFlink jobs (dedupe, indicator-compute, normalize-sink, scanner-alert).
+- [`kubernetes/base-services/flink/jobs-java/`](../kubernetes/base-services/flink/jobs-java/) -- Java TA-Lib jobs (10 categories).
+
+All CRs start `state: suspended`. Activate via kubectl or the management API:
+
+```bash
+# List all session jobs
+kubectl get flinksessionjobs -n flink
+
+# Build + push images / upload JARs
+bash bootstrap/scripts/build-flink-jobs.sh --push
+bash bootstrap/scripts/build-flink-jobs-java.sh --push
+
+# Activate via kubectl
+kubectl patch flinksessionjob indicator-compute -n flink \
+  --type merge -p '{"spec":{"job":{"state":"running"}}}'
+
+# ... or via the management API / Python SDK
+curl -XPOST http://control.local/api/flink/sessionjobs/indicators-momentum/activate
+```
+
+Consume from Python using the [Python SDK](../management/sdk/):
+
+```python
+from rpi_k8s_sdk import configure_tracing
+from rpi_k8s_sdk.kafka import AvroConsumer
+
+configure_tracing("strategy-consumer")
+async with AvroConsumer(
+    bootstrap="trading-kafka-kafka-bootstrap.data-services:9094",
+    topics=["features.indicators.v1"],
+    group_id="my-strategy",
+    username="consumer-management",
+    password=password,
+    ssl_cafile="/etc/kafka/ca/ca.crt",
+) as consumer:
+    async for msg in consumer:
+        print(msg.value["vt_symbol"], msg.value.get("extras"))
+```
+
+### PostgreSQL Integration
+
+Flink writes to the `flink_trading` schema in the existing PostgreSQL instance:
+
+- `flink_trading.market_data` -- raw tick storage
+- `flink_trading.indicators` -- computed technical indicators
+- `flink_trading.signals` -- normalized signals with feature vectors
+- `flink_trading.job_metadata` -- job execution tracking
+
+```bash
+# Verify schema
+kubectl exec -n data-services deploy/postgresql -- \
+  psql -U postgres -c "\dt flink_trading.*"
+```
+
+### Connecting Flink to Argo / Dagster
+
+**Argo triggering Flink savepoints:**
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: flink-savepoint
+  namespace: mlops
+spec:
+  entrypoint: trigger-savepoint
+  templates:
+    - name: trigger-savepoint
+      container:
+        image: bitnami/kubectl:latest
+        command: [kubectl]
+        args:
+          - patch
+          - flinksessionjob/market-data-ingest
+          - -n
+          - flink
+          - --type
+          - merge
+          - -p
+          - '{"spec":{"job":{"state":"suspended","upgradeMode":"savepoint"}}}'
+```
+
+**Dagster materializing from Flink sink tables:**
+
+```python
+from dagster import asset
+import pandas as pd
+from sqlalchemy import create_engine
+
+@asset(group_name="trading")
+def flink_signals_snapshot():
+    """Materialize a snapshot of Flink-produced signals for ML training."""
+    engine = create_engine(
+        "postgresql://postgres:postgres123@postgresql.data-services:5432/postgres"
+    )
+    return pd.read_sql(
+        "SELECT * FROM flink_trading.signals WHERE signal_timestamp > NOW() - INTERVAL '1 day'",
+        engine,
+    )
+```
+
+### Monitoring
+
+Flink exposes Prometheus metrics on port 9249. A dedicated Grafana dashboard ("Flink Trading Pipeline") is provisioned automatically and shows:
+
+- Running jobs and available task slots
+- Records in/out per second per task
+- Checkpoint duration and size
+- JVM heap usage (JobManager and TaskManagers)
+- Kafka consumer lag
+- Backpressure indicators
+
+Metrics flow: Flink :9249 -> Prometheus scrape -> remote_write -> VictoriaMetrics (90-day retention).
+
 ## Additional Resources
 
 - [Data Pipeline Recipes](data-pipeline-recipes.md)
@@ -544,3 +753,6 @@ kubectl get endpoints -n ml-platform
 - [BentoML Documentation](https://docs.bentoml.com/)
 - [MLFlow Documentation](https://mlflow.org/docs/latest/index.html)
 - [Ray Documentation](https://docs.ray.io/)
+- [Apache Flink Documentation](https://nightlies.apache.org/flink/flink-docs-stable/)
+- [Flink Kubernetes Operator](https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-stable/)
+- [Strimzi Kafka Operator](https://strimzi.io/documentation/)

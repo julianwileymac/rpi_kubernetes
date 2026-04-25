@@ -36,7 +36,7 @@ spec:
                 sleep 5
               done
 
-              for bucket in mlflow-artifacts argo-workflows bentoml-artifacts dagster-artifacts milvus-bucket loki-data ragflow; do
+              for bucket in mlflow-artifacts argo-workflows bentoml-artifacts dagster-artifacts milvus-bucket loki-data ragflow flink-checkpoints flink-jobs av-raw; do
                 mc mb --ignore-existing "minio/${bucket}"
               done
 

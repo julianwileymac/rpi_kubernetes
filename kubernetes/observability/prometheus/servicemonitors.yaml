@@ -95,3 +95,45 @@ spec:
     - targetPort: 80
       path: /metrics
       interval: 30s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: flink-metrics
+  namespace: observability
+  labels:
+    app: flink
+spec:
+  namespaceSelector:
+    matchNames:
+      - flink
+  selector:
+    matchLabels:
+      app: flink-trading-session
+      component: metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-metrics
+  namespace: observability
+  labels:
+    app: kafka
+spec:
+  namespaceSelector:
+    matchNames:
+      - data-services
+  selector:
+    matchLabels:
+      strimzi.io/cluster: trading-kafka
+      strimzi.io/kind: Kafka
+  endpoints:
+    - port: tcp-prometheus
+      path: /metrics
+      interval: 30s

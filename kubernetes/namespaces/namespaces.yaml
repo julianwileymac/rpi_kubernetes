@@ -60,3 +60,11 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: rpi-k8s-cluster
     purpose: mlops-and-workflows
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: flink
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: stream-processing

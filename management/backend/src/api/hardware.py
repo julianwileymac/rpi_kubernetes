@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..config import Settings, get_settings
 from ..models.hardware import ClusterHardwareOverview, HardwareMetrics, NodeHardwareInfo
-from ..services import HardwareService, KubernetesService
+from ..services import HardwareService, KubernetesService, RedisService
+from .redis_admin import get_redis_service
 
 router = APIRouter()
 
@@ -25,16 +26,38 @@ def get_k8s_service(settings: Settings = Depends(get_settings)) -> KubernetesSer
 async def get_cluster_hardware(
     hardware: HardwareService = Depends(get_hardware_service),
     k8s: KubernetesService = Depends(get_k8s_service),
+    redis: RedisService = Depends(get_redis_service),
 ) -> ClusterHardwareOverview:
-    """Get hardware overview for all cluster nodes."""
-    try:
-        # Get node IPs from Kubernetes
-        nodes = await k8s.list_nodes()
-        node_ips = {node.name: node.ip_address for node in nodes}
+    """Get hardware overview for all cluster nodes (cached 30s via Redis).
 
-        return await hardware.get_cluster_hardware_overview(node_ips)
+    The underlying `HardwareService` still performs per-node SSH probes on
+    a cache miss; the Redis-backed cache-aside replaces the previous
+    in-process ``_node_cache`` so horizontally scaled management pods
+    share results.
+    """
+    try:
+        data = await redis.cached_call(
+            namespace="hardware",
+            identifier="overview",
+            fetch=lambda: _fetch_cluster_hardware(hardware, k8s),
+            ttl=30,
+        )
+        if isinstance(data, ClusterHardwareOverview):
+            return data
+        return ClusterHardwareOverview(**data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _fetch_cluster_hardware(
+    hardware: HardwareService, k8s: KubernetesService
+) -> dict:
+    nodes = await k8s.list_nodes()
+    node_ips = {node.name: node.ip_address for node in nodes}
+    overview = await hardware.get_cluster_hardware_overview(node_ips)
+    return (
+        overview.model_dump() if hasattr(overview, "model_dump") else overview.dict()
+    )
 
 
 @router.get("/{node_name}", response_model=NodeHardwareInfo)

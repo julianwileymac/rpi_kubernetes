@@ -27,6 +27,7 @@ resources:
   # Base services
   - base-services/minio/
   - base-services/postgresql/
+  - base-services/redis/
   - base-services/mlflow/
   - base-services/jupyterhub/
   - base-services/dask-ray/
@@ -34,12 +35,18 @@ resources:
   - base-services/chromadb/
   - base-services/ragflow/
   - base-services/datahub/
+
+  # Streaming platform
+  - base-services/kafka/
+  - base-services/schema-registry/
+  - base-services/flink/
   
   # Observability stack
   - observability/otel-collector/
   - observability/jaeger/
   - observability/victoriametrics/
   - observability/prometheus/
+  - observability/grafana/flink-dashboard-configmap.yaml
   
   # MLOps
   - mlops/argo-workflows/
@@ -50,6 +57,8 @@ resources:
   # Note: kube-prometheus-stack (Grafana/Prometheus), Loki, Milvus deployed via Helm separately.
   # Loki: kubernetes/observability/loki/values.yaml + bootstrap/scripts/install-loki.sh
   # Prometheus stack: kubernetes/observability/prometheus/values.yaml
+  # Strimzi Kafka Operator: kubernetes/base-services/kafka/values.yaml + bootstrap/scripts/install-flink.sh
+  # Flink Kubernetes Operator: kubernetes/base-services/flink/values.yaml + bootstrap/scripts/install-flink.sh
 
 # ConfigMap generators (if needed)
 # configMapGenerator:

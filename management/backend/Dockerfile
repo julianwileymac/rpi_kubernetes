@@ -1,10 +1,14 @@
 # =============================================================================
 # RPi Kubernetes Management API - Dockerfile
 # =============================================================================
-# Multi-stage build for optimal image size
+# Multi-stage build for optimal image size.
+# Build context must be the REPO ROOT so the Alpha Vantage client library can be
+# copied. See bootstrap/scripts/build-management.sh which runs:
+#     docker build -f management/backend/Dockerfile -t rpi-k8s-management:latest .
+# from the repo root.
 # =============================================================================
 
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -14,9 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY pyproject.toml README.md ./
+COPY management/backend/pyproject.toml management/backend/README.md ./
+# The AV client library is bundled from integrations/alphavantage.
+COPY integrations/alphavantage /opt/alphavantage-client
 RUN pip install --no-cache-dir hatch && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir . && \
+    pip install --no-cache-dir /opt/alphavantage-client
 
 # =============================================================================
 # Production image
@@ -36,7 +43,7 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
-COPY src/ ./src/
+COPY management/backend/src/ ./src/
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \

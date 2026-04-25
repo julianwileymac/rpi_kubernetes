@@ -164,6 +164,13 @@ class KubernetesService:
         assert self._apps_api is not None
         return self._apps_api
 
+    @property
+    def custom_api(self) -> client.CustomObjectsApi:
+        """Get CustomObjectsApi instance (used for Strimzi + Flink CRDs)."""
+        self._initialize()
+        assert self._custom_api is not None
+        return self._custom_api
+
     async def get_cluster_info(self) -> ClusterInfo:
         """Get overall cluster information."""
         self._initialize()

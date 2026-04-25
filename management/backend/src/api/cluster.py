@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..config import Settings, get_settings
 from ..models.cluster import ClusterInfo, NodeInfo, PodInfo, ServiceInfo
-from ..services import KubernetesService
+from ..services import KubernetesService, RedisService
+from .redis_admin import get_redis_service
 
 router = APIRouter()
 
@@ -19,23 +20,52 @@ def get_k8s_service(settings: Settings = Depends(get_settings)) -> KubernetesSer
 @router.get("", response_model=ClusterInfo)
 async def get_cluster_info(
     k8s: KubernetesService = Depends(get_k8s_service),
+    redis: RedisService = Depends(get_redis_service),
 ) -> ClusterInfo:
-    """Get overall cluster information."""
+    """Get overall cluster information (cached 30s via Redis)."""
     try:
-        return await k8s.get_cluster_info()
+        data = await redis.cached_call(
+            namespace="cluster",
+            identifier="info",
+            fetch=lambda: _fetch_cluster_info(k8s),
+            ttl=30,
+        )
+        if isinstance(data, ClusterInfo):
+            return data
+        return ClusterInfo(**data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _fetch_cluster_info(k8s: KubernetesService) -> dict:
+    info = await k8s.get_cluster_info()
+    return info.model_dump() if hasattr(info, "model_dump") else info.dict()
 
 
 @router.get("/nodes", response_model=list[NodeInfo])
 async def list_nodes(
     k8s: KubernetesService = Depends(get_k8s_service),
+    redis: RedisService = Depends(get_redis_service),
 ) -> list[NodeInfo]:
-    """List all cluster nodes."""
+    """List all cluster nodes (cached 30s via Redis)."""
     try:
-        return await k8s.list_nodes()
+        rows = await redis.cached_call(
+            namespace="cluster",
+            identifier="nodes",
+            fetch=lambda: _fetch_nodes(k8s),
+            ttl=30,
+        )
+        return [NodeInfo(**row) if isinstance(row, dict) else row for row in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _fetch_nodes(k8s: KubernetesService) -> list[dict]:
+    nodes = await k8s.list_nodes()
+    return [
+        n.model_dump() if hasattr(n, "model_dump") else n.dict()
+        for n in nodes
+    ]
 
 
 @router.get("/nodes/{name}", response_model=NodeInfo)

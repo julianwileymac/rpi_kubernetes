@@ -22,4 +22,5 @@ resources:
   - workflowtemplate-cdc-sync.yaml
   - cronworkflow-cdc-sync-hourly.yaml
   - rbac-dagster-argo.yaml
+  - alphavantage/
 

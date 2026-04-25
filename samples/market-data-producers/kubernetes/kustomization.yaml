@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: data-services
+
+resources:
+  - configmap.yaml
+  - deployments.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: rpi-k8s-platform
+  app.kubernetes.io/component: sample-producer

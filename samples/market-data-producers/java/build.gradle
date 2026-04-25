@@ -1,0 +1,46 @@
+plugins {
+    id 'application'
+    id 'com.gradleup.shadow' version '8.3.0'
+    id 'java'
+}
+
+group = 'io.rpi.samples'
+version = '0.1.0'
+
+sourceCompatibility = JavaVersion.VERSION_17
+targetCompatibility = JavaVersion.VERSION_17
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    kafkaVersion = '3.8.0'
+    apicurioVersion = '2.5.11.Final'
+    avroVersion = '1.11.3'
+    slf4jVersion = '2.0.13'
+    log4jVersion = '2.23.1'
+    otelVersion = '1.37.0'
+}
+
+dependencies {
+    implementation "org.apache.kafka:kafka-clients:${kafkaVersion}"
+    implementation "io.apicurio:apicurio-registry-serdes-avro-serde:${apicurioVersion}"
+    implementation "org.apache.avro:avro:${avroVersion}"
+    implementation "io.opentelemetry:opentelemetry-api:${otelVersion}"
+    implementation "org.slf4j:slf4j-api:${slf4jVersion}"
+    implementation "org.apache.logging.log4j:log4j-slf4j2-impl:${log4jVersion}"
+    implementation "org.apache.logging.log4j:log4j-core:${log4jVersion}"
+}
+
+application {
+    mainClass = 'io.rpi.samples.StockMarketSampleProducer'
+}
+
+shadowJar {
+    archiveClassifier.set('')
+    mergeServiceFiles()
+    manifest {
+        attributes 'Main-Class': 'io.rpi.samples.StockMarketSampleProducer'
+    }
+}

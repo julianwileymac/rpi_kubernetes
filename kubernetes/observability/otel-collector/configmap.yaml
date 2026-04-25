@@ -61,6 +61,20 @@ data:
         start_at: end
         operators:
           - type: container
+
+      # Redis receiver - pulls INFO-derived metrics directly from the shared
+      # Redis 8 Stack as a secondary source alongside oliver006/redis_exporter.
+      # Emits metrics namespaced `redis.*` so Grafana can distinguish OTel
+      # sourced metrics from the exporter's `redis_*` series.
+      redis:
+        endpoint: redis.data-services.svc.cluster.local:6379
+        password: ${env:REDIS_PASSWORD}
+        collection_interval: 30s
+        metrics:
+          redis.maxmemory:
+            enabled: true
+          redis.cmd.latency:
+            enabled: true
     
     processors:
       # Batch processor for efficient export
@@ -194,9 +208,12 @@ data:
           processors: [memory_limiter, resource, attributes, attributes/vectordb, span, batch]
           exporters: [otlp/jaeger, logging]
         
-        # Metrics pipeline - export to both Prometheus and VictoriaMetrics
+        # Metrics pipeline - export to both Prometheus and VictoriaMetrics.
+        # The `redis` receiver is wired in as a secondary source alongside the
+        # oliver006/redis_exporter ServiceMonitor scrape.  If the Collector
+        # cannot reach Redis (e.g. first boot) the pipeline still succeeds.
         metrics:
-          receivers: [otlp, prometheus, hostmetrics]
+          receivers: [otlp, prometheus, hostmetrics, redis]
           processors: [memory_limiter, resource, batch]
           exporters: [prometheus, prometheusremotewrite/victoriametrics, logging]
         

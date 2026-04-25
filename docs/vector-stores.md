@@ -1,13 +1,23 @@
 # Vector Stores Guide
 
-This guide covers the vector database options available in the cluster: ChromaDB (for development) and Milvus (for production).
+This guide covers the vector database options available in the cluster: ChromaDB (for development), Milvus (for production), and the new Redis 8 Stack vector store (for the global document store + RAG agents).
 
 ## Overview
 
-The cluster provides two vector database options:
+The cluster provides three vector database options:
 
-- **ChromaDB** - Lightweight, embedded vector database for rapid development
-- **Milvus** - Production-grade, scalable vector database for large-scale deployments
+- **ChromaDB** - Lightweight, embedded vector database for rapid development.
+- **Milvus** - Production-grade, scalable vector database for very large deployments.
+- **Redis 8 Stack** - Co-located vector + JSON + cache for the document store, semantic LLM cache, and LangGraph agent memory. See [redis-stack.md](redis-stack.md).
+
+| Aspect              | ChromaDB        | Milvus           | Redis 8 Stack          |
+| ------------------- | --------------- | ---------------- | ---------------------- |
+| Best for            | Notebooks, dev  | >10M vectors     | RAG + cache + memory   |
+| Index types         | HNSW            | HNSW, IVF_*, PQ  | HNSW, FLAT             |
+| Co-located storage  | None            | MinIO + etcd     | RedisJSON in same proc |
+| Metadata search     | Basic           | Yes              | Full RediSearch syntax |
+| Other workloads     | -               | -                | Cache, TS, Bloom, Top-K |
+| Operational footprint | Tiny          | Heavy            | Single binary on Pi    |
 
 ## ChromaDB - Development Vector Store
 
@@ -218,6 +228,52 @@ collection.insert(
     partition_name="partition_2024"
 )
 ```
+
+## Redis 8 Stack - RAG + Cache + Agent Memory
+
+### Use Cases
+
+- Self-service [Document Store](document-store.md) portal in the management UI.
+- Semantic LLM caching (RedisVL `SemanticCache`).
+- LangGraph agent memory (checkpointer + vector-indexed long-term store).
+- Cache-aside for hot Python objects via `pipelines.redis_cache.cache_aside`.
+
+### Access
+
+- **Internal**: `redis.data-services.svc.cluster.local:6379`
+- **Auth**: password from `redis-credentials` Secret.
+
+### Python helpers
+
+```python
+from pipelines.redis_io import get_redis, ping, require_modules
+from pipelines.redis_vectors import ensure_index, upsert_chunks, vector_search
+
+assert ping()
+require_modules(("search", "rejson"))
+
+ensure_index("idx:my_chunks", vector_dims=384)
+upsert_chunks(
+    "idx:my_chunks",
+    records=[{"id": "1", "text": "...", "embedding": [...], "metadata": {...}}],
+)
+hits = vector_search("idx:my_chunks", query_vector=[...], top_k=5)
+```
+
+For LangChain integration, install `langchain-redis` and use
+`RedisConfig` against the same Redis instance, or wrap the helpers
+above in your own retriever class.
+
+### When to pick Redis vs Milvus / ChromaDB
+
+- ✅ Use **Redis 8 Stack** when the doc store, cache, agent memory, and
+  vector search live together (the Document Store portal, RAG agents,
+  LangGraph workflows).  Single binary, easy ops.
+- ✅ Use **ChromaDB** when prototyping in JupyterHub or for tiny
+  datasets unrelated to the rest of the framework.
+- ✅ Use **Milvus** for very large (>10M vectors) corpora, advanced
+  indexing (IVF_PQ, partitions), or multi-tenant separation at the
+  database level.
 
 ## Choosing Between ChromaDB and Milvus
 

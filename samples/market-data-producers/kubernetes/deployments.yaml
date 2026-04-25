@@ -1,0 +1,122 @@
+# =============================================================================
+# Sample market-data producer deployments
+# =============================================================================
+# Only the synthetic producer is enabled by default because it doesn't need
+# vendor credentials. Enable polygon / alpaca / ibkr deployments by setting
+# replicas=1 + providing the vendor secrets + rebuilding the sample image
+# with the appropriate extras installed.
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: synthetic-producer-sample
+  labels:
+    app: synthetic-producer-sample
+    sample: market-data
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: synthetic-producer-sample
+  template:
+    metadata:
+      labels:
+        app: synthetic-producer-sample
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9310"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: producer
+          image: ghcr.io/julianwiley/market-data-producers:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "synthetic_producer.py", "--rate", "10"]
+          envFrom:
+            - configMapRef:
+                name: market-data-producer-samples
+          env:
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: producer-market
+                  key: password
+          ports:
+            - name: metrics
+              containerPort: 9310
+          volumeMounts:
+            - name: kafka-ca
+              mountPath: /etc/kafka/ca
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+      volumes:
+        - name: kafka-ca
+          secret:
+            secretName: trading-kafka-cluster-ca-cert
+            items:
+              - key: ca.crt
+                path: ca.crt
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polygon-producer-sample
+  labels:
+    app: polygon-producer-sample
+    sample: market-data
+spec:
+  # Set replicas=1 and provide the polygon-credentials secret with POLYGON_API_KEY
+  replicas: 0
+  selector:
+    matchLabels:
+      app: polygon-producer-sample
+  template:
+    metadata:
+      labels:
+        app: polygon-producer-sample
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9311"
+    spec:
+      containers:
+        - name: producer
+          image: ghcr.io/julianwiley/market-data-producers:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "polygon_producer.py"]
+          envFrom:
+            - configMapRef:
+                name: market-data-producer-samples
+          env:
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: producer-market
+                  key: password
+            - name: POLYGON_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: polygon-credentials
+                  key: api-key
+                  optional: true
+          ports:
+            - name: metrics
+              containerPort: 9311
+          volumeMounts:
+            - name: kafka-ca
+              mountPath: /etc/kafka/ca
+              readOnly: true
+      volumes:
+        - name: kafka-ca
+          secret:
+            secretName: trading-kafka-cluster-ca-cert
+            items:
+              - key: ca.crt
+                path: ca.crt

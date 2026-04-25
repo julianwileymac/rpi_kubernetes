@@ -19,6 +19,17 @@ spec:
           command:
             - /otelcol-contrib
             - --config=/etc/otel/config.yaml
+          env:
+            - name: K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: password
+                  optional: true
           ports:
             - name: otlp-grpc
               containerPort: 4317

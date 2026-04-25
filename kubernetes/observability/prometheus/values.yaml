@@ -69,6 +69,23 @@ grafana:
       - grafana.local
     ingressClassName: nginx
 
+  # Install the Redis data source plugin so the Grafana UI can run Redis
+  # commands (TS.RANGE, FT.INFO, JSON.GET, INFO, etc.) directly against the
+  # shared Redis 8 Stack for the document store / cache dashboards.
+  plugins:
+    - redis-datasource
+
+  # Mirror the Redis password into Grafana from a local Secret.  The Secret
+  # itself is created by kubernetes/base-services/redis/secret.yaml (copied
+  # into the observability namespace via Kustomize, or you can rely on the
+  # mirror in otel-collector/redis-secret.yaml).
+  envValueFrom:
+    REDIS_PASSWORD:
+      secretKeyRef:
+        name: redis-credentials
+        key: password
+        optional: true
+
   additionalDataSources:
     - name: Jaeger
       type: jaeger
@@ -85,6 +102,22 @@ grafana:
       access: proxy
       url: http://victoriametrics.observability:8428
       isDefault: false
+    # Redis direct-query data source for dashboards that use TS.*, FT.*, JSON.*
+    # and INFO commands.  Backed by the Redis 8 Stack deployment in
+    # data-services; the plugin speaks RESP over an outbound connection.
+    - name: Redis
+      type: redis-datasource
+      access: proxy
+      url: redis://redis.data-services.svc.cluster.local:6379
+      isDefault: false
+      jsonData:
+        client: standalone
+        poolSize: 5
+        timeout: 10
+        pingInterval: 30
+        pipelineWindow: 0
+      secureJsonData:
+        password: $REDIS_PASSWORD
 
   dashboardProviders:
     dashboardproviders.yaml:
@@ -121,6 +154,103 @@ grafana:
         gnetId: 12006
         revision: 1
         datasource: Prometheus
+      # oliver006/redis_exporter dashboard - server-level Redis metrics
+      # (memory, ops/sec, keyspace, replication, slowlog counters).
+      redis-overview:
+        gnetId: 11835
+        revision: 1
+        datasource: Prometheus
+      # Custom dashboard that queries the Redis data source directly so
+      # the Grafana UI can show document-store specific counters
+      # (cache hits/misses, FT.INFO on our indexes, TS.* ingest rate).
+      redis-document-store:
+        json: |
+          {
+            "title": "Redis Document Store",
+            "uid": "redis-document-store",
+            "schemaVersion": 39,
+            "version": 1,
+            "tags": ["redis", "document-store", "rag"],
+            "timezone": "",
+            "editable": true,
+            "time": {"from": "now-6h", "to": "now"},
+            "panels": [
+              {
+                "type": "stat",
+                "title": "Cache Hits",
+                "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+                "datasource": {"type": "redis-datasource", "uid": "redis"},
+                "targets": [
+                  {"type": "command", "command": "hget", "keyName": "stats:cache", "field": "hits", "refId": "A"}
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Cache Misses",
+                "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+                "datasource": {"type": "redis-datasource", "uid": "redis"},
+                "targets": [
+                  {"type": "command", "command": "hget", "keyName": "stats:cache", "field": "misses", "refId": "A"}
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Documents Indexed (idx:documents)",
+                "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+                "datasource": {"type": "redis-datasource", "uid": "redis"},
+                "targets": [
+                  {"type": "command", "command": "ft.info", "keyName": "idx:documents", "refId": "A"}
+                ]
+              },
+              {
+                "type": "stat",
+                "title": "Chunks Indexed (idx:chunks)",
+                "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+                "datasource": {"type": "redis-datasource", "uid": "redis"},
+                "targets": [
+                  {"type": "command", "command": "ft.info", "keyName": "idx:chunks", "refId": "A"}
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Ingest Rate (stats:ingest:count)",
+                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+                "datasource": {"type": "redis-datasource", "uid": "redis"},
+                "targets": [
+                  {"type": "timeSeries", "command": "ts.range", "keyName": "stats:ingest:count", "refId": "A"}
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Semantic Cache Latency (stats:semcache:latency)",
+                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+                "datasource": {"type": "redis-datasource", "uid": "redis"},
+                "targets": [
+                  {"type": "timeSeries", "command": "ts.range", "keyName": "stats:semcache:latency", "refId": "A"}
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Redis Ops/sec (exporter)",
+                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+                "datasource": "Prometheus",
+                "targets": [
+                  {"expr": "rate(redis_commands_processed_total{service=\"redis-exporter\"}[5m])", "legendFormat": "ops", "refId": "A"}
+                ]
+              },
+              {
+                "type": "timeseries",
+                "title": "Keyspace Hit Ratio (exporter)",
+                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+                "datasource": "Prometheus",
+                "targets": [
+                  {"expr": "rate(redis_keyspace_hits_total{service=\"redis-exporter\"}[5m]) / (rate(redis_keyspace_hits_total{service=\"redis-exporter\"}[5m]) + rate(redis_keyspace_misses_total{service=\"redis-exporter\"}[5m]))", "legendFormat": "hit-ratio", "refId": "A"}
+                ]
+              }
+            ],
+            "templating": {"list": []},
+            "annotations": {"list": []}
+          }
       workflow-orchestrators:
         json: |
           {

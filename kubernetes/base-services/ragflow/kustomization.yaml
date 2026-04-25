@@ -14,6 +14,10 @@ resources:
   - secret.yaml
   - configmap.yaml
   - pvc.yaml
-  - redis-deployment.yaml
   - deployment.yaml
   - service.yaml
+
+# Redis is now provided by the shared `base-services/redis/` Kustomization.
+# The RAGFlow host (ragflow-redis.data-services.svc.cluster.local) is kept
+# stable via an alias Service in that directory, so deployment.yaml and
+# configmap.yaml did not need host changes; db=1 remains RAGFlow's slot.

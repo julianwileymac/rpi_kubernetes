@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from ..config import Settings, get_settings
 from ..services import KubernetesService, MLFlowService, MinioService
+from .redis_admin import get_redis_service
 
 router = APIRouter()
 
@@ -17,6 +18,8 @@ class HealthStatus(BaseModel):
     kubernetes_connected: bool
     mlflow_connected: bool
     minio_connected: bool
+    redis_connected: bool = False
+    redis_modules_missing: list[str] = []
 
 
 @router.get("/health", response_model=HealthStatus)
@@ -49,12 +52,26 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthStat
         except Exception:
             pass
 
+    # Check Redis connection (document store + cache backbone)
+    redis_connected = False
+    missing_modules: list[str] = []
+    if settings.redis.enabled:
+        try:
+            redis_service = get_redis_service(settings)
+            state = await redis_service.health()
+            redis_connected = bool(state.get("ping"))
+            missing_modules = list(state.get("missing_modules") or [])
+        except Exception:
+            pass
+
     return HealthStatus(
         status="healthy" if k8s_connected else "degraded",
         version="0.1.0",
         kubernetes_connected=k8s_connected,
         mlflow_connected=mlflow_connected,
         minio_connected=minio_connected,
+        redis_connected=redis_connected,
+        redis_modules_missing=missing_modules,
     )
 
 

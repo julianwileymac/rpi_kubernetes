@@ -7,6 +7,7 @@ resources:
   - configmap.yaml
   - daemonset.yaml
   - service.yaml
+  - redis-secret.yaml
 
 commonLabels:
   app.kubernetes.io/name: otel-collector

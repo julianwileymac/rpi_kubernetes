@@ -104,6 +104,14 @@ Grafana provides unified dashboards for all observability data:
 - Ray Metrics
 - MLFlow Metrics
 - Workflow Orchestrators - Argo and Dagster
+- Flink Trading Pipeline
+- Redis Overview (grafana.com #11835 - server-level Redis metrics)
+- Redis Document Store (direct-query panels: FT.INFO, TS.RANGE, HGETALL)
+
+**Data Source Plugins**:
+- `redis-datasource` - installed via `grafana.plugins` in the Helm values so
+  the Redis direct-query data source can render `TS.RANGE`, `FT.INFO`,
+  `JSON.GET`, and `INFO` panels against the shared Redis 8 Stack.
 
 ## OpenTelemetry Collector
 
@@ -170,6 +178,119 @@ The OpenTelemetry Collector runs as a DaemonSet on all nodes and:
    )
    ```
 
+### Flink and Kafka Tracing + Metrics
+
+#### Kafka (Strimzi)
+
+**Native tracing** is turned on in [`kafka-cluster.yaml`](../kubernetes/base-services/kafka/kafka-cluster.yaml)
+via `spec.tracing.type=opentelemetry` plus `OTEL_*` env vars on the
+`KafkaNodePool` pod template. The broker emits a span per produce / fetch
+request so downstream Jaeger traces show the full path from producer ->
+broker -> consumer.
+
+**Kafka Connect** and **Kafka Bridge** also enable `spec.tracing.opentelemetry`
+and auto-instrument SASL/SSL + schema-registry HTTP calls.
+
+**Schema Registry (Apicurio)** exports traces via Quarkus's OTel integration
+(`QUARKUS_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) so the lookup during serde is
+visible as a child span of the producing client's span.
+
+#### Python + Java clients
+
+All templates under [`templates/`](../templates/) attach auto-instrumentation:
+
+- **Python** templates import `opentelemetry-instrumentation-confluent-kafka`
+  and `opentelemetry-instrumentation-aiokafka` which wrap `produce()` and
+  the consumer iterator. HTTPX calls into Apicurio are covered by the same
+  auto-instrumentation so schema loads show up as child spans.
+- **Java** templates ship with the OpenTelemetry Java Agent attached via
+  `-javaagent:/opt/otel/opentelemetry-javaagent.jar`; the agent instruments
+  Kafka clients, HTTP clients, and the JVM runtime without code changes.
+
+#### Flink
+
+- **PyFlink jobs** inherit `OTEL_EXPORTER_OTLP_ENDPOINT` from the shared
+  [`flink-trading-config`](../kubernetes/base-services/flink/flink-configmap.yaml)
+  ConfigMap.
+- **Java Flink jobs** (`flink-jobs-java/`) take the same approach - the
+  session cluster image can optionally be launched with the OTel Java Agent
+  by uncommenting the `env.java.opts.all` entry in
+  [`session-cluster.yaml`](../kubernetes/base-services/flink/session-cluster.yaml).
+- **Metrics**: Apache Flink exposes JVM and job-level metrics via the
+  Prometheus reporter on port 9249. A dedicated `ServiceMonitor` scrapes
+  these from the `flink` namespace at 15-second intervals.
+
+Key Flink metrics:
+- `flink_jobmanager_numRunningJobs` -- active jobs
+- `flink_taskmanager_job_task_numRecordsIn/Out` -- throughput
+- `flink_jobmanager_job_lastCheckpointDuration` -- checkpoint health
+- `flink_taskmanager_job_task_backPressuredTimeMsPerSecond` -- backpressure
+
+The pre-provisioned **Flink Trading Pipeline** dashboard in Grafana visualizes all of these.
+
+**Kafka (Strimzi)** exposes JMX metrics via the Prometheus JMX exporter configured in the Kafka cluster CR. A `ServiceMonitor` scrapes the Kafka broker pods in `data-services`.
+
+Key Kafka metrics:
+- `kafka_server_BrokerTopicMetrics_MessagesInPerSec` -- ingest rate
+- `kafka_server_BrokerTopicMetrics_BytesInPerSec` / `BytesOutPerSec` -- throughput
+- `kafka_server_ReplicaManager_UnderReplicatedPartitions` -- replication health
+
+Both Flink and Kafka metrics flow through the existing pipeline: Prometheus scrape -> `remote_write` -> VictoriaMetrics (90-day retention).
+
+#### Redis 8 Stack
+
+The shared Redis 8 Stack deployment (`kubernetes/base-services/redis/`) is
+observed through two complementary paths:
+
+1. **`oliver006/redis_exporter`** (Prometheus) - a sidecar Deployment in
+   `data-services` exposes `/metrics` on port 9121.  The
+   `ServiceMonitor` at `kubernetes/base-services/redis/servicemonitor.yaml`
+   is scraped every 30 s and provides classic counters:
+   - `redis_commands_processed_total` - ops/sec
+   - `redis_keyspace_hits_total`, `redis_keyspace_misses_total` - hit ratio
+   - `redis_memory_used_bytes`, `redis_memory_max_bytes`
+   - `redis_slowlog_length`, `redis_latest_fork_usec`
+   - `redis_connected_clients`, `redis_blocked_clients`
+
+2. **Grafana Redis data source** (`redis-datasource` plugin) - runs
+   `TS.RANGE`, `FT.INFO`, `JSON.GET`, `HGETALL`, and other commands
+   directly against Redis from the Grafana UI.  The **Redis Document
+   Store** dashboard wires this up for the document pipeline:
+   - `FT.INFO idx:documents` / `idx:chunks` for index size and indexing
+     progress
+   - `HGETALL stats:cache` for cache-aside hit/miss counters
+   - `TS.RANGE stats:ingest:count` and `stats:semcache:latency` for
+     time-series visualization of ingest and semantic-cache behavior
+
+The OpenTelemetry Collector also carries a `redis` receiver as a
+secondary metrics source; it uses the mirrored Redis password Secret
+in the `observability` namespace
+(`kubernetes/observability/otel-collector/redis-secret.yaml`).
+
+**Latency and slowlog playbook**
+
+The Redis ConfigMap sets `latency-monitor-threshold 10` and
+`slowlog-log-slower-than 1000000` (microseconds) so operators can
+triage slow commands without restarting:
+
+```bash
+# Latest latency spikes by event class
+kubectl -n data-services exec deploy/redis -- \
+  redis-cli -a "$REDIS_PASSWORD" LATENCY LATEST
+kubectl -n data-services exec deploy/redis -- \
+  redis-cli -a "$REDIS_PASSWORD" LATENCY HISTORY command
+
+# Slowest commands (top 10)
+kubectl -n data-services exec deploy/redis -- \
+  redis-cli -a "$REDIS_PASSWORD" SLOWLOG GET 10
+
+# Big / hot key scans (non-intrusive)
+kubectl -n data-services exec deploy/redis -- \
+  redis-cli -a "$REDIS_PASSWORD" --keystats
+```
+
+See [redis-stack.md](redis-stack.md) for the full operations guide.
+
 ## Querying and Analysis
 
 ### Correlating Metrics, Logs, and Traces
@@ -194,6 +315,8 @@ In Grafana, you can:
 | VictoriaMetrics | 90 days | 50GB |
 | Loki | 30 days | 20GB |
 | Jaeger | 5 days | 10GB |
+| Flink Checkpoints (MinIO) | Manual | flink-checkpoints bucket |
+| Kafka Logs | 7 days | 20GB PVC |
 
 ## Troubleshooting
 

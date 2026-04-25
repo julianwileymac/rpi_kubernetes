@@ -21,6 +21,7 @@ def setup_telemetry(settings: Settings) -> None:
     Sets up:
     - OTLP exporter to send traces to the collector
     - FastAPI auto-instrumentation
+    - Redis auto-instrumentation (covers redis-py sync + asyncio)
     - Custom resource attributes
     """
     if not settings.telemetry.enabled:
@@ -54,6 +55,19 @@ def setup_telemetry(settings: Settings) -> None:
 
         # Instrument FastAPI
         FastAPIInstrumentor.instrument()
+
+        # Instrument Redis (safe to call before any Redis client is created).
+        # Captures both sync (redis.Redis) and async (redis.asyncio) traffic.
+        try:
+            from opentelemetry.instrumentation.redis import RedisInstrumentor
+
+            RedisInstrumentor().instrument()
+            logger.info("Redis OTel instrumentation enabled")
+        except Exception as redis_err:  # pragma: no cover - optional dep
+            logger.warning(
+                "Redis OTel instrumentor unavailable: %s",
+                redis_err,
+            )
 
         logger.info(
             f"OpenTelemetry configured: exporting to {settings.telemetry.exporter_endpoint}"

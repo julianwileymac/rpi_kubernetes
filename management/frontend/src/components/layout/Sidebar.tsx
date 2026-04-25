@@ -12,15 +12,23 @@ import {
   FlaskConical,
   Settings,
   BookOpen,
+  Radio,
+  Waves,
+  FileText,
+  LineChart,
 } from 'lucide-react'
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
   { name: 'Nodes', href: '/nodes', icon: Server },
   { name: 'Deployments', href: '/deployments', icon: Boxes },
   { name: 'Hardware', href: '/hardware', icon: HardDrive },
   { name: 'Monitoring', href: '/monitoring', icon: Activity },
   { name: 'MLFlow', href: '/mlflow', icon: FlaskConical },
+  { name: 'Kafka', href: '/kafka', icon: Radio },
+  { name: 'Flink', href: '/flink', icon: Waves },
+  { name: 'Documents', href: '/documents', icon: FileText },
+  { name: 'Alpha Vantage', href: '/alphavantage', icon: LineChart },
 ]
 
 const secondaryNavigation = [
@@ -49,7 +57,9 @@ export function Sidebar() {
       {/* Main Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navigation.map((item) => {
-          const isActive = pathname === item.href
+          const isActive = item.exact
+            ? pathname === item.href
+            : pathname === item.href || pathname.startsWith(`${item.href}/`)
           return (
             <Link
               key={item.name}

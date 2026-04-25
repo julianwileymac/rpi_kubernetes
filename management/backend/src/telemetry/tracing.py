@@ -1,5 +1,6 @@
 """Tracing utilities and decorators."""
 
+import asyncio
 import functools
 from typing import Any, Callable, Optional
 
@@ -80,8 +81,7 @@ def traced(
                     span.record_exception(e)
                     raise
 
-        # Return appropriate wrapper based on function type
-        if functools._iscoroutinefunction(func):
+        if asyncio.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
 

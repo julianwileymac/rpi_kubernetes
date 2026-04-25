@@ -10,6 +10,24 @@ def _env(name: str, default: str) -> str:
     return os.getenv(name, default).strip()
 
 
+def _env_float(name: str, default: str) -> float:
+    try:
+        return float(_env(name, default))
+    except ValueError:
+        return float(default)
+
+
+def _env_int(name: str, default: str) -> int:
+    try:
+        return int(_env(name, default))
+    except ValueError:
+        return int(default)
+
+
+def _env_bool(name: str, default: str = "false") -> bool:
+    return _env(name, default).lower() in {"1", "true", "yes", "on"}
+
+
 def normalize_endpoint(endpoint: str) -> str:
     if endpoint.startswith("http://") or endpoint.startswith("https://"):
         return endpoint
@@ -67,4 +85,63 @@ class PipelineConfig:
     @property
     def effective_source_postgres_dsn(self) -> str:
         return self.source_postgres_dsn or self.postgres_dsn
+
+
+@dataclass(slots=True)
+class RedisSettings:
+    """Shared Redis 8 Stack configuration.
+
+    Controls the connection used by every redis_* helper module as well as
+    the Redis OM models.  The primary environment contract is:
+
+        REDIS_URL             -- full redis[s]://[:pass@]host:port/db URI
+        REDIS_HOST/PORT/DB    -- used when REDIS_URL is unset
+        REDIS_PASSWORD        -- shared secret (matches base-services/redis)
+        REDIS_INDEX_PREFIX    -- prefix for FT.CREATE / keyspace isolation
+        REDIS_CACHE_TTL_SECONDS
+        REDIS_SEMANTIC_CACHE_THRESHOLD
+        REDIS_TLS_ENABLED
+    """
+
+    url: str = field(
+        default_factory=lambda: _env(
+            "REDIS_URL",
+            "redis://:ragflow123@redis.data-services.svc.cluster.local:6379/0",
+        )
+    )
+    host: str = field(
+        default_factory=lambda: _env("REDIS_HOST", "redis.data-services.svc.cluster.local")
+    )
+    port: int = field(default_factory=lambda: _env_int("REDIS_PORT", "6379"))
+    db: int = field(default_factory=lambda: _env_int("REDIS_DB", "0"))
+    password: str = field(default_factory=lambda: _env("REDIS_PASSWORD", "ragflow123"))
+    index_prefix: str = field(default_factory=lambda: _env("REDIS_INDEX_PREFIX", "rpi"))
+    cache_ttl_seconds: int = field(
+        default_factory=lambda: _env_int("REDIS_CACHE_TTL_SECONDS", "300")
+    )
+    semantic_cache_threshold: float = field(
+        default_factory=lambda: _env_float("REDIS_SEMANTIC_CACHE_THRESHOLD", "0.15")
+    )
+    tls_enabled: bool = field(default_factory=lambda: _env_bool("REDIS_TLS_ENABLED", "false"))
+    socket_timeout: float = field(
+        default_factory=lambda: _env_float("REDIS_SOCKET_TIMEOUT", "5.0")
+    )
+    socket_connect_timeout: float = field(
+        default_factory=lambda: _env_float("REDIS_SOCKET_CONNECT_TIMEOUT", "3.0")
+    )
+    max_connections: int = field(
+        default_factory=lambda: _env_int("REDIS_MAX_CONNECTIONS", "16")
+    )
+
+    def dsn(self) -> str:
+        """Return a connection URL regardless of which env var was set."""
+        if self.url:
+            return self.url
+        scheme = "rediss" if self.tls_enabled else "redis"
+        auth = f":{self.password}@" if self.password else ""
+        return f"{scheme}://{auth}{self.host}:{self.port}/{self.db}"
+
+
+def get_redis_settings() -> RedisSettings:
+    return RedisSettings()
 

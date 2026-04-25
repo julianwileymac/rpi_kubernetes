@@ -44,16 +44,35 @@
 - PostgreSQL (ClusterIP: 10.43.238.196)
 - MinIO (ClusterIP: 10.43.155.106)
 - ChromaDB (ClusterIP: 10.43.43.228)
+- Redis 8 Stack (`redis.data-services:6379`, alias `ragflow-redis.data-services:6379`) -- shared cache + RediSearch vector store + RedisJSON document store + RedisTimeSeries + RedisBloom; replaces the prior Valkey deployment. See `docs/redis-stack.md`.
+- redis_exporter (`redis-exporter.data-services:9121`) -- Prometheus metrics for Redis 8 Stack.
 
 ### ML Platform
 - MLflow (ClusterIP: 10.43.139.144)
 - Dask Scheduler (ClusterIP: 10.43.221.22)
 - Ray Head (ClusterIP: 10.43.176.204)
 
+### Streaming
+- Apache Kafka (Strimzi KRaft, namespace: data-services) -- Helm + CRs (plain + TLS + SCRAM listeners, native OTel tracing)
+- KafkaTopics -- 13 canonical market/features/deadletter topics + 14 dedicated `alphavantage.*.v1` topics (quote/bar/fx/crypto/indicator/news/gainers/insider/overview/earnings/options/commodity/econ/deadletter)
+- KafkaUsers -- producer-market, producer-features, consumer-flink, consumer-management, connect-sinks, bridge-gateway, admin-sdk (SCRAM-SHA-512 + ACLs)
+- Kafka Connect -- trading-connect (S3 + JDBC + Apicurio converter plugins)
+- KafkaConnectors -- s3-sink-features-indicators, jdbc-sink-features-signals (paused)
+- Kafka Bridge -- trading-bridge (HTTP gateway at http://kafka-bridge.local)
+- KafkaMirrorMaker2 -- trading-mirror (suspended placeholder)
+- KafkaRebalance -- trading-rebalance (paused, requires Cruise Control)
+- Apicurio Schema Registry -- kafka-backed, REST v2 + Confluent compat
+- Apache Flink Operator v1.14.0 (namespace: flink) -- Helm
+- Flink Session Cluster: flink-trading-session (namespace: flink) -- FlinkDeployment CR
+- PyFlink Jobs: market-data-dedupe, indicator-compute, normalize-sink, scanner-alert, alphavantage-enrichment (suspended)
+- Java TA-Lib Jobs: indicators-{overlap,momentum,volume,volatility,price-transform,cycle,statistic,patterns,math-transform,math-operator} (suspended)
+- Alpha Vantage streaming producer: deployment/alphavantage-producer (namespace: data-services), replicas=0 by default, toggled from the management UI or via POST /api/alphavantage/stream
+
 ### Observability
 - Prometheus (with Alertmanager)
 - Jaeger Collector (ClusterIP: 10.43.149.144)
 - OpenTelemetry Collector (ClusterIP: 10.43.44.138)
+- Grafana Dashboard: Flink Trading Pipeline
 
 ### Management
 - Management API (ClusterIP: 10.43.74.175)
@@ -112,7 +131,35 @@ helm upgrade --install loki grafana/loki -n observability -f kubernetes/observab
 
 ## Recent Changes Applied
 
-1. **Avahi/mDNS Installation**
+1. **Alpha Vantage Primary Data Provider Integration (2026-04-23)**
+   - New `integrations/alphavantage/` custom sync/async client engine (covers
+     all 9 AV categories: time series, index data, options, alpha intelligence,
+     fundamentals, forex, crypto, commodities, economic indicators + 52
+     technical indicators). Adds rate limiting, typed errors, retry, caching,
+     and Pydantic v2 response models.
+   - Expanded data models: 14 Avro schemas under
+     `flink-jobs/jobs/schemas/alphavantage/`, Redis-OM models in
+     `pipelines/alphavantage_om.py`, Pydantic re-exports in
+     `management/backend/src/models/alphavantage.py`.
+   - Backend `/api/alphavantage/*` router + `AlphaVantageService` wired into
+     `Settings.alphavantage`.
+   - Poll-and-emit streaming producer template
+     `templates/alphavantage-producer/` feeding 14 new `alphavantage.*.v1`
+     Kafka topics.
+   - Argo bulk-load suite under
+     `kubernetes/mlops/pipelines/alphavantage/` (12 WorkflowTemplates + 2
+     CronWorkflows) driven by the new `pipelines.cli alphavantage-bulk`
+     subcommand.
+   - New `/alphavantage` route family in the management UI with sub-pages
+     for each category + admin panel.
+   - Credentials bootstrap: `bootstrap/scripts/install-alphavantage.{sh,ps1}`
+     seeds the `alphavantage-credentials` Secret in both `data-services` and
+     `mlops` from the local token file
+     (`C:\Users\Julian Wiley\Documents\alphavantage_api_token.txt`).
+   - Optional PyFlink enrichment job (`av_enrichment.py`, suspended by
+     default) that joins quotes with the compacted overview stream.
+
+2. **Avahi/mDNS Installation**
    - Installed `avahi-daemon`, `avahi-utils`, `libnss-mdns` on all nodes
    - Enabled and started avahi-daemon service
 
@@ -174,6 +221,9 @@ python bootstrap/scripts/discover_cluster.py --update-config
 4. **Set up health monitoring daemon** as systemd service
 5. **Configure agent recovery services** on workers
 6. **Test IP change detection** and automatic recovery
+7. **Build Flink job JARs** (ingest, indicators, normalize-sink) and upload to MinIO
+8. **Activate Flink jobs** once JARs are available and broker API adapters are ready
+9. **Add schema registry** for Kafka topic contracts (Avro/Protobuf)
 
 ## Verification Commands
 

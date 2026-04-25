@@ -459,6 +459,98 @@ helm upgrade --install yatai bentoml/yatai \
   --set yatai.minio.external.bucket="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.bucket}' | base64 -d)"
 ```
 
+### 7.4 Deploy Streaming Platform (Flink + Kafka + Apicurio)
+
+The install script provisions the full Strimzi footprint: Kafka cluster,
+topics, users (SCRAM-SHA-512 + ACLs), Kafka Connect, Kafka Bridge,
+MirrorMaker 2 (suspended placeholder), Apicurio Schema Registry, and the
+Flink session cluster.
+
+```bash
+# Option A: Use the all-in-one install script
+bash bootstrap/scripts/install-flink.sh
+# Include the Java TA-Lib FlinkSessionJob CRs (suspended by default):
+bash bootstrap/scripts/install-flink.sh --with-java-jobs
+
+# Option B: Manual step-by-step
+
+# Add Helm repos
+helm repo add strimzi https://strimzi.io/charts/
+helm repo add flink-operator-repo \
+  https://downloads.apache.org/flink/flink-kubernetes-operator-1.14.0/
+helm repo update
+
+# Install Strimzi Kafka Operator
+helm upgrade --install strimzi-kafka-operator strimzi/strimzi-kafka-operator \
+  --namespace data-services \
+  -f kubernetes/base-services/kafka/values.yaml
+
+# Deploy KRaft Kafka cluster + topics + users
+kubectl apply -f kubernetes/base-services/kafka/kafka-cluster.yaml
+kubectl wait kafka/trading-kafka --for=condition=Ready -n data-services --timeout=600s
+kubectl apply -f kubernetes/base-services/kafka/topics.yaml
+kubectl apply -f kubernetes/base-services/kafka/users.yaml
+
+# Deploy Apicurio Schema Registry
+kubectl apply -k kubernetes/base-services/schema-registry/
+
+# Deploy Kafka Connect, Bridge, MirrorMaker 2, sample connectors
+kubectl apply -f kubernetes/base-services/kafka/connect.yaml
+kubectl apply -f kubernetes/base-services/kafka/bridge.yaml
+kubectl apply -f kubernetes/base-services/kafka/mirrormaker2.yaml
+kubectl apply -k kubernetes/base-services/kafka/connectors/
+
+# Install Flink Kubernetes Operator
+helm upgrade --install flink-kubernetes-operator \
+  flink-operator-repo/flink-kubernetes-operator \
+  --namespace flink --create-namespace \
+  -f kubernetes/base-services/flink/values.yaml
+
+# Apply Flink resources (RBAC, config, session cluster, services, PyFlink jobs)
+kubectl apply -k kubernetes/base-services/flink/
+
+# Optional: apply Java TA-Lib FlinkSessionJob CRs (all suspended)
+kubectl apply -k kubernetes/base-services/flink/jobs-java/
+
+# Apply ServiceMonitors and Grafana dashboard
+kubectl apply -f kubernetes/observability/prometheus/servicemonitors.yaml
+kubectl apply -f kubernetes/observability/grafana/flink-dashboard-configmap.yaml
+
+# Initialize PostgreSQL schema for Flink trading tables
+kubectl get configmap flink-postgres-init -n flink -o jsonpath='{.data.flink-init\.sql}' | \
+  kubectl exec -i -n data-services deploy/postgresql -- psql -U postgres
+```
+
+Verify the streaming platform:
+
+```bash
+# Kafka + Strimzi resources
+kubectl get pods -n data-services -l strimzi.io/cluster=trading-kafka
+kubectl get kafkatopics -n data-services
+kubectl get kafkausers -n data-services
+kubectl get kafkaconnect,kafkaconnectors,kafkabridge,kafkamirrormaker2 -n data-services
+
+# Schema Registry
+kubectl get pods -n data-services -l app=apicurio-registry
+curl http://schema-registry.local/apis/registry/v2/system/info
+
+# Flink Operator + Session Cluster
+kubectl get pods -n flink -l app.kubernetes.io/name=flink-kubernetes-operator
+kubectl get flinkdeployments -n flink
+kubectl get flinksessionjobs -n flink
+
+# Flink Web UI (port-forward for testing)
+kubectl port-forward -n flink svc/flink-trading-rest 8081:8081
+# Open http://localhost:8081
+```
+
+Build and upload the Java TA-Lib Flink jobs (only required to activate
+Recipe 7):
+
+```bash
+bash bootstrap/scripts/build-flink-jobs-java.sh --push
+```
+
 ## Step 9: Configure Local DNS (Optional)
 
 Add entries to your workstation's `/etc/hosts`:
@@ -476,7 +568,7 @@ kubectl get svc -A | grep LoadBalancer
 
 # Ingress hosts (control.local, etc.) use the ingress-nginx LoadBalancer IP
 kubectl -n ingress get svc ingress-nginx-controller
-192.168.1.205  control.local argo.local dagster.local yatai.local
+192.168.1.205  control.local argo.local dagster.local yatai.local flink.local
 ```
 
 ## Step 10: Access Services
@@ -496,6 +588,8 @@ kubectl -n ingress get svc ingress-nginx-controller
 | Milvus | http://milvus.local:19530 | - |
 | BentoML/Yatai | http://yatai.local:3000 | - |
 | MinIO | http://minio.local:9001 | minioadmin / minioadmin123 |
+| Flink Web UI | http://flink.local | - |
+| Kafka (internal) | trading-kafka-kafka-bootstrap.data-services:9092 | - |
 | Control Panel | http://control.local | - |
 
 ### 10.1 Verify Argo and Dagster Telemetry

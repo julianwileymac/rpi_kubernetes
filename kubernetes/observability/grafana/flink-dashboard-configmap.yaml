@@ -1,0 +1,239 @@
+# =============================================================================
+# Grafana Dashboard - Flink Metrics
+# =============================================================================
+# Based on Grafana dashboard ID 14840 (Flink Metrics), adapted for the
+# RPi Kubernetes cluster. Mount into Grafana via sidecar provisioning.
+#
+# Requires: Prometheus scraping Flink metrics on port 9249.
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-flink
+  namespace: observability
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+data:
+  flink-trading-dashboard.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "Apache Flink Trading Pipeline Metrics",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "title": "Running Jobs",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "targets": [{
+            "expr": "flink_jobmanager_numRunningJobs",
+            "legendFormat": "Running Jobs"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "TaskManager Slots (Available / Total)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "targets": [
+            {
+              "expr": "flink_jobmanager_taskSlotsAvailable",
+              "legendFormat": "Available"
+            },
+            {
+              "expr": "flink_jobmanager_taskSlotsTotal",
+              "legendFormat": "Total"
+            }
+          ]
+        },
+        {
+          "title": "Uptime",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "targets": [{
+            "expr": "flink_jobmanager_Status_JVM_Uptime / 1000",
+            "legendFormat": "Uptime (s)"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "s" }
+          }
+        },
+        {
+          "title": "Checkpoint Count",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "targets": [{
+            "expr": "flink_jobmanager_job_numberOfCompletedCheckpoints",
+            "legendFormat": "{{ job_name }}"
+          }]
+        },
+        {
+          "title": "Records In / Out per Second",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            {
+              "expr": "rate(flink_taskmanager_job_task_numRecordsIn[1m])",
+              "legendFormat": "In: {{ task_name }}"
+            },
+            {
+              "expr": "rate(flink_taskmanager_job_task_numRecordsOut[1m])",
+              "legendFormat": "Out: {{ task_name }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "ops" }
+          }
+        },
+        {
+          "title": "Bytes In / Out per Second",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [
+            {
+              "expr": "rate(flink_taskmanager_job_task_numBytesIn[1m])",
+              "legendFormat": "In: {{ task_name }}"
+            },
+            {
+              "expr": "rate(flink_taskmanager_job_task_numBytesOut[1m])",
+              "legendFormat": "Out: {{ task_name }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "Bps" }
+          }
+        },
+        {
+          "title": "Checkpoint Duration",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [{
+            "expr": "flink_jobmanager_job_lastCheckpointDuration / 1000",
+            "legendFormat": "{{ job_name }}"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "s" }
+          }
+        },
+        {
+          "title": "Checkpoint Size",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [{
+            "expr": "flink_jobmanager_job_lastCheckpointFullSize",
+            "legendFormat": "{{ job_name }}"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "bytes" }
+          }
+        },
+        {
+          "title": "JVM Heap Memory (JobManager)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "expr": "flink_jobmanager_Status_JVM_Memory_Heap_Used",
+              "legendFormat": "Used"
+            },
+            {
+              "expr": "flink_jobmanager_Status_JVM_Memory_Heap_Max",
+              "legendFormat": "Max"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "bytes" }
+          }
+        },
+        {
+          "title": "JVM Heap Memory (TaskManagers)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "targets": [
+            {
+              "expr": "flink_taskmanager_Status_JVM_Memory_Heap_Used",
+              "legendFormat": "Used: {{ tm_id }}"
+            },
+            {
+              "expr": "flink_taskmanager_Status_JVM_Memory_Heap_Max",
+              "legendFormat": "Max: {{ tm_id }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "bytes" }
+          }
+        },
+        {
+          "title": "GC Time (All Components)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "targets": [
+            {
+              "expr": "rate(flink_jobmanager_Status_JVM_GarbageCollector_G1_Young_Generation_Time[5m])",
+              "legendFormat": "JM Young GC"
+            },
+            {
+              "expr": "rate(flink_taskmanager_Status_JVM_GarbageCollector_G1_Young_Generation_Time[5m])",
+              "legendFormat": "TM Young GC: {{ tm_id }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "ms" }
+          }
+        },
+        {
+          "title": "Kafka Consumer Lag",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "targets": [{
+            "expr": "flink_taskmanager_job_task_operator_KafkaSourceReader_KafkaConsumer_records_lag_max",
+            "legendFormat": "{{ task_name }}"
+          }]
+        },
+        {
+          "title": "Backpressure (ms/s)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+          "targets": [{
+            "expr": "rate(flink_taskmanager_job_task_backPressuredTimeMsPerSecond[1m])",
+            "legendFormat": "{{ task_name }}"
+          }],
+          "fieldConfig": {
+            "defaults": { "unit": "ms" }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["flink", "trading", "streaming"],
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "current": { "text": "Prometheus", "value": "Prometheus" }
+          }
+        ]
+      },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "",
+      "title": "Flink Trading Pipeline",
+      "uid": "flink-trading-pipeline",
+      "version": 1
+    }

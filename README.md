@@ -27,9 +27,16 @@ A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu de
 ## Features
 
 - **k3s Kubernetes** - Lightweight, production-ready Kubernetes distribution
-- **Base Services** - JupyterHub, MLFlow, MinIO, PostgreSQL, Prometheus, Grafana, Dask/Ray, ChromaDB, Milvus, DataHub
-- **Management Framework** - Python FastAPI backend + Next.js control panel
-- **OpenTelemetry** - Distributed tracing and observability
+- **Base Services** - JupyterHub, MLFlow, MinIO, PostgreSQL, Prometheus, Grafana, Dask/Ray, ChromaDB, Milvus, DataHub, Apache Flink, Kafka
+- **Redis 8 Stack** - Shared cache + RediSearch vector store + RedisJSON document store + RedisTimeSeries + RedisBloom (replaces the previous Valkey deployment, also serves RAGFlow). See [docs/redis-stack.md](docs/redis-stack.md).
+- **Document Store Portal** - `/documents` page in the control panel for self-service uploads, MinIO JSON artifact ingestion, freehand annotations, and hybrid keyword/semantic search. See [docs/document-store.md](docs/document-store.md).
+- **Full Strimzi footprint** - Kafka + Topics + Users (SCRAM/ACLs) + Connect + Bridge + MirrorMaker 2 + Apicurio Schema Registry
+- **Flink TA-Lib catalog** - Java Flink jobs covering all ~158 TA-Lib indicators + ~61 candlestick patterns (`flink-jobs-java/`)
+- **Client templates + samples** - Python and Java producer/consumer scaffolds, IBKR/Alpaca/Polygon/yfinance/synthetic producer samples (`templates/`, `samples/`)
+- **Python SDK** - `rpi_k8s_sdk` exposes Avro producers/consumers + Apicurio client + Flink control-plane client (`management/sdk/`)
+- **Pipelines framework** - Caching, vector store, agent memory, Redis OM models, and semantic LLM cache via `pipelines.redis_*` modules
+- **Management Framework** - Python FastAPI backend (`/kafka`, `/flink`, `/documents`, `/redis`) + Next.js control panel
+- **OpenTelemetry** - Native tracing on brokers, Connect, Bridge, Flink, Redis, and every client template
 - **Ansible Automation** - Reproducible cluster provisioning
 - **mDNS Discovery** - Automatic node discovery without static IPs (Avahi/Bonjour)
 - **Auto-Start & Recovery** - k3s services start automatically with health monitoring
@@ -204,7 +211,8 @@ using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-ngi
 ```
 192.168.1.200  jupyter.local mlflow.local grafana.local minio.local control.local \
                prometheus.local vm.local loki.local jaeger.local argo.local \
-               dagster.local chromadb.local milvus.local yatai.local datahub.local
+               dagster.local chromadb.local milvus.local yatai.local datahub.local \
+               flink.local schema-registry.local kafka-bridge.local
 ```
 
 | Service | URL | Default Credentials |
@@ -222,6 +230,10 @@ using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-ngi
 | Milvus | http://milvus.local:19530 | - |
 | DataHub | http://datahub.local | datahub / datahub |
 | BentoML/Yatai | http://yatai.local:3000 | - |
+| Flink Web UI | http://flink.local | - |
+| Kafka (internal) | trading-kafka-kafka-bootstrap.data-services:9092 (plain) or :9094 (SCRAM/TLS) | see `kafkausers` |
+| Kafka Bridge (HTTP) | http://kafka-bridge.local | - |
+| Schema Registry | http://schema-registry.local | - |
 | MinIO Console | http://minio.local:9001 | minioadmin / minioadmin123 |
 | Control Panel | http://control.local | - |
 
@@ -248,14 +260,34 @@ rpi_kubernetes/
 │   └── roles/                  # Reusable roles
 ├── bootstrap/                  # Node setup scripts
 │   ├── configs/                # Node configuration files
-│   └── scripts/                # Setup scripts
+│   └── scripts/                # Setup scripts (install-flink.sh, build-flink-jobs*.sh)
 ├── kubernetes/                 # K8s manifests
-│   ├── namespaces/             # Namespace definitions
-│   ├── base-services/          # Core service deployments
+│   ├── namespaces/
+│   ├── base-services/          # Core service deployments (incl. kafka/, schema-registry/)
+│   │   ├── flink/
+│   │   │   ├── jobs/           # PyFlink FlinkSessionJob CRs
+│   │   │   └── jobs-java/      # Java TA-Lib FlinkSessionJob CRs
+│   │   ├── kafka/              # Strimzi Kafka + Topics + Users + Connect + Bridge + MM2
+│   │   └── schema-registry/    # Apicurio deployment
 │   └── observability/          # Monitoring stack
+├── flink-jobs/                 # PyFlink jobs (dedupe, indicator_compute, ...)
+├── flink-jobs-java/            # Java TA-Lib Flink jobs (Gradle multi-module)
+│   ├── common/
+│   ├── indicators-overlap/
+│   ├── indicators-momentum/
+│   └── indicators-*/           # one module per TA-Lib category
+├── samples/                    # End-to-end samples
+│   └── market-data-producers/  # synthetic / polygon / yfinance / alpaca / ibkr + Java sample
+├── templates/                  # Scaffolds for new workloads
+│   ├── kafka-python-producer/
+│   ├── kafka-python-consumer/
+│   ├── kafka-java-producer/
+│   ├── kafka-java-consumer/
+│   └── flink-java-job/
 ├── management/                 # Control panel
-│   ├── backend/                # Python FastAPI
-│   └── frontend/               # Next.js UI
+│   ├── backend/                # Python FastAPI (/kafka, /flink routers)
+│   ├── frontend/               # Next.js UI (/kafka, /flink pages)
+│   └── sdk/                    # rpi_k8s_sdk Python package
 └── docs/                       # Documentation
 ```
 
@@ -284,11 +316,16 @@ rpi_kubernetes/
 - **Jaeger** - Distributed tracing
 - **OpenTelemetry Collector** - Unified telemetry pipeline
 
+### Streaming
+- **Apache Kafka** (Strimzi) - Distributed message broker with KafkaTopic/KafkaUser/KafkaConnect/KafkaBridge/KafkaMirrorMaker2 CRs and native OTel tracing
+- **Apicurio Schema Registry** - ARM-friendly Avro registry (REST v2 + Confluent-compat) backed by Kafka storage
+- **Apache Flink** - Distributed stream processing for trading pipelines (PyFlink MVP + Java TA-Lib catalog jobs)
+
 ### MLOps
 - **Argo Workflows** - ML pipeline orchestration
 - **Dagster** - Data and ML orchestration platform
 - **BentoML / Yatai** - Model serving platform
-- **Pipeline Recipes** - End-to-end ingest/CDC/vector workflows (see `docs/data-pipeline-recipes.md`)
+- **Pipeline Recipes** - End-to-end ingest/CDC/vector/streaming workflows (see `docs/data-pipeline-recipes.md`)
 
 ## Management Framework
 
