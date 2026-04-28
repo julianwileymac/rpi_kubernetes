@@ -40,6 +40,7 @@ A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu de
 - **Ansible Automation** - Reproducible cluster provisioning
 - **mDNS Discovery** - Automatic node discovery without static IPs (Avahi/Bonjour)
 - **Auto-Start & Recovery** - k3s services start automatically with health monitoring
+- **Public Web Edge** - `julianwiley.com` personal portal (Next.js standalone, multi-arch image at `ghcr.io/julianwileymac/portal`) exposed via Cloudflare Tunnel, deployed in the `web` namespace and routed by `cloudflared` in the `edge` namespace. See [`kubernetes/base-services/portal/README.md`](kubernetes/base-services/portal/README.md) and [`kubernetes/base-services/cloudflared/README.md`](kubernetes/base-services/cloudflared/README.md).
 
 ## Quick Start
 

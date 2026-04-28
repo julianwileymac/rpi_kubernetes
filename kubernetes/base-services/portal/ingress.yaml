@@ -1,0 +1,56 @@
+# =============================================================================
+# julianwiley-portal — Ingress
+# =============================================================================
+# Two host bindings on the same Service:
+#
+#   - julianwiley.com  -> public origin behind the Cloudflare Tunnel.
+#                         TLS is terminated at Cloudflare, so the in-cluster
+#                         hop is plain HTTP via ingress-nginx.
+#   - portal.local     -> LAN-only entry for development / smoke tests.
+#                         Add `<MetalLB IP>  portal.local` to /etc/hosts
+#                         (or your Windows hosts file) on the dev machine.
+#
+# Annotations:
+#   - proxy-body-size: 25 MB is generous for the ProForm contact submissions
+#     (default 1 MB blocks the markdown editor / file uploads we may add later).
+#   - proxy-read-timeout: 60s; NextAuth callbacks occasionally exceed the
+#     5s default during cold starts.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portal
+  namespace: web
+  labels:
+    app: portal
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: julianwiley-portal
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: julianwiley.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  number: 80
+    - host: portal.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  number: 80

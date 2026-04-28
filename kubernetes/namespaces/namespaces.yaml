@@ -68,3 +68,19 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: rpi-k8s-cluster
     purpose: stream-processing
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: public-facing-web-apps
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edge
+  labels:
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    purpose: internet-edge-and-tunnels

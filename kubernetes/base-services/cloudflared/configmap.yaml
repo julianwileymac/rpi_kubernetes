@@ -1,0 +1,63 @@
+# =============================================================================
+# cloudflared — Tunnel ingress routing
+# =============================================================================
+# This is the routing table the cloudflared daemon consults when a request
+# arrives over the Cloudflare edge. Each entry maps a public hostname to an
+# in-cluster service URL.
+#
+# Update this map (and re-apply) when adding a new public hostname:
+#
+#   1. CNAME the new hostname in Cloudflare DNS to <tunnel-id>.cfargotunnel.com
+#      (or run `cloudflared tunnel route dns <tunnel-name> <hostname>`).
+#   2. Add an entry below before the catch-all 404 fallback.
+#   3. kubectl -n edge rollout restart deploy/cloudflared
+#
+# All hostnames terminate at the cluster's ingress-nginx controller; the
+# controller's Ingress objects then dispatch by Host header to the right
+# Service. This means we add new public sites by editing one Ingress and
+# (optionally) one entry here — no extra cloudflared restarts required for
+# additional paths under an already-routed hostname.
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: cloudflared
+    app.kubernetes.io/component: tunnel
+    app.kubernetes.io/part-of: edge
+data:
+  config.yaml: |
+    # Tunnel id is templated from the tunnel-credentials Secret at runtime
+    # via --config + --credentials-file flags; see deployment.yaml.
+    tunnel: julianwiley-portal
+    credentials-file: /etc/cloudflared/creds/credentials.json
+
+    # Per-request log level. Drop to `info` for fewer logs in steady state.
+    loglevel: info
+
+    # Enable HTTP/2 between cloudflared and the in-cluster ingress controller.
+    no-tls-verify: true
+
+    metrics: 0.0.0.0:2000
+
+    # Public hostnames -> in-cluster targets. Order matters; last entry MUST
+    # be the catch-all `service: http_status:404` rule per Cloudflare docs.
+    ingress:
+      - hostname: julianwiley.com
+        service: http://ingress-nginx-controller.ingress.svc.cluster.local:80
+        originRequest:
+          httpHostHeader: julianwiley.com
+          connectTimeout: 30s
+          tlsTimeout: 10s
+          noHappyEyeballs: true
+
+      - hostname: www.julianwiley.com
+        service: http://ingress-nginx-controller.ingress.svc.cluster.local:80
+        originRequest:
+          httpHostHeader: julianwiley.com
+
+      # Catch-all — required by cloudflared.
+      - service: http_status:404

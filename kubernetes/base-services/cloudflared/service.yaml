@@ -1,0 +1,28 @@
+# =============================================================================
+# cloudflared — Service (metrics only)
+# =============================================================================
+# cloudflared dials OUT to Cloudflare's edge, so the only thing exposed inside
+# the cluster is the local Prometheus metrics endpoint. This Service lets the
+# observability stack scrape it without going through the pod IP directly.
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudflared-metrics
+  namespace: edge
+  labels:
+    app: cloudflared
+    app.kubernetes.io/name: cloudflared
+    app.kubernetes.io/component: tunnel
+    app.kubernetes.io/part-of: edge
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 2000
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app: cloudflared

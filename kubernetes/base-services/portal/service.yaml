@@ -1,0 +1,28 @@
+# =============================================================================
+# julianwiley-portal — Services
+# =============================================================================
+# ClusterIP for in-cluster traffic (consumed by ingress-nginx and the
+# cloudflared tunnel pod). No LoadBalancer here — the only public exposure
+# point is via the Cloudflare Tunnel, which connects outbound and does not
+# need a MetalLB-allocated IP.
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal
+  namespace: web
+  labels:
+    app: portal
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: julianwiley-portal
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: portal

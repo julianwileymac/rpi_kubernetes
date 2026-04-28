@@ -1,0 +1,112 @@
+# =============================================================================
+# julianwiley-portal — Deployment
+# =============================================================================
+# Stateless Next.js (standalone) server. Two replicas with a RollingUpdate
+# strategy so blue/green deploys stay zero-downtime; the app holds no local
+# state (sessions are JWT, blog content is baked into the image).
+#
+# The portal image is multi-arch (linux/amd64 + linux/arm64) so it can run on
+# the Ubuntu control plane OR the four RPi5 ARM workers. We don't pin the
+# arch; let the scheduler spread replicas across nodes.
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal
+  namespace: web
+  labels:
+    app: portal
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: julianwiley-portal
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: portal
+  template:
+    metadata:
+      labels:
+        app: portal
+        app.kubernetes.io/name: portal
+        app.kubernetes.io/component: web
+        app.kubernetes.io/part-of: julianwiley-portal
+        app.kubernetes.io/managed-by: rpi-k8s-cluster
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: portal
+          image: ghcr.io/julianwileymac/portal:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: portal-config
+            - secretRef:
+                name: portal-credentials
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          # `next start` (and the standalone server) needs a writable
+          # /app/.next/cache for the on-disk LRU cache. A small emptyDir
+          # is enough; the rest of the rootfs stays read-only.
+          volumeMounts:
+            - name: nextjs-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: nextjs-cache
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: portal

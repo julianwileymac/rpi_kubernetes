@@ -1,0 +1,39 @@
+# =============================================================================
+# julianwiley-portal — ConfigMap
+# =============================================================================
+# Non-sensitive runtime configuration. Mounted into the portal Deployment via
+# envFrom so every container in the pod sees these as plain env vars.
+#
+# Public site URL is the canonical origin used by NextAuth's callback URLs and
+# the metadata.metadataBase resolver. When the Cloudflare Tunnel is fronting
+# the cluster this should be `https://julianwiley.com`; for LAN-only smoke
+# tests, override the env in a kustomize patch with `http://portal.local`.
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: portal-config
+  namespace: web
+  labels:
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: julianwiley-portal
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  HOSTNAME: "0.0.0.0"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+  NEXT_PUBLIC_SITE_URL: "https://julianwiley.com"
+  NEXT_PUBLIC_SITE_NAME: "Julian Wiley"
+
+  # NextAuth canonical URL — must match the public origin behind the tunnel,
+  # otherwise OAuth redirects from Entra/Google fail with `redirect_uri_mismatch`.
+  AUTH_URL: "https://julianwiley.com"
+  AUTH_TRUST_HOST: "true"
+
+  # Microsoft Entra ID issuer; client ID + secret live in the portal-credentials
+  # Secret. `common` issuer means multi-tenant; switch to your tenant id for
+  # single-tenant.
+  AUTH_MICROSOFT_ENTRA_ID_ISSUER: "https://login.microsoftonline.com/common/v2.0"

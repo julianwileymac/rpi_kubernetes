@@ -40,7 +40,13 @@ resources:
   - base-services/kafka/
   - base-services/schema-registry/
   - base-services/flink/
-  
+
+  # Public web — julianwiley.com personal portal (Next.js standalone)
+  - base-services/portal/
+
+  # Internet edge — Cloudflare Tunnel for outbound public exposure
+  - base-services/cloudflared/
+
   # Observability stack
   - observability/otel-collector/
   - observability/jaeger/
