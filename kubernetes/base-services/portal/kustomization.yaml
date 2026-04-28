@@ -10,9 +10,15 @@ kind: Kustomization
 
 namespace: web
 
+# NOTE: secret.yaml is intentionally NOT in the resources list. The
+# `portal-credentials` Secret is created out-of-band via
+# `kubectl create secret generic portal-credentials --from-literal=...`
+# (see portal/README.md) so a `kubectl apply -k` does NOT clobber the
+# real values with the committed placeholders. The committed
+# secret.yaml stays as a template + documentation of which keys must
+# be set.
 resources:
   - configmap.yaml
-  - secret.yaml
   - deployment.yaml
   - service.yaml
   - ingress.yaml

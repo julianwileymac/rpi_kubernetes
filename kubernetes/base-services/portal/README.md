@@ -13,10 +13,23 @@ Image: `ghcr.io/julianwileymac/portal:latest` (multi-arch — `linux/amd64` and 
 | File              | Purpose                                                                  |
 | ----------------- | ------------------------------------------------------------------------ |
 | `configmap.yaml`  | Non-sensitive runtime env (NextAuth issuer, public site URL, etc.)       |
-| `secret.yaml`     | `AUTH_SECRET` + Entra/Google OAuth credentials (PLACEHOLDERS — replace!) |
-| `deployment.yaml` | 2 replicas, RollingUpdate, read-only rootfs, multi-arch                  |
+| `secret.yaml`     | Template only — NOT in `kustomization.yaml`. Real Secret is created out-of-band so `kubectl apply -k` doesn't clobber it (see "First-time setup" below). |
+| `deployment.yaml` | 2 replicas, RollingUpdate, read-only rootfs, **amd64-only** node selector, image pinned to `:sha-<short>` |
 | `service.yaml`    | ClusterIP only — no LoadBalancer (tunnel handles internet exposure)      |
 | `ingress.yaml`    | Hosts: `julianwiley.com` (tunnel) + `portal.local` (LAN)                 |
+
+### Image arch policy
+
+CI publishes amd64-only images on every push to `main`; multi-arch (amd64 + arm64) only fires on `v*.*.*` tags or a `workflow_dispatch` with the `linux/amd64,linux/arm64` platforms input. The Deployment's `nodeSelector: kubernetes.io/arch: amd64` keeps pods on the `julian-wiley-ubuntu-desktop` control plane until a multi-arch release ships.
+
+### Image pinning
+
+`image:` is pinned to a `:sha-<short>` tag rather than `:latest`. With `imagePullPolicy: IfNotPresent`, kubelet caches `:latest` and won't see new pushes. Bump the sha-tag on every release:
+
+```bash
+kubectl -n web set image deploy/portal portal=ghcr.io/julianwileymac/portal:sha-<short>
+kubectl -n web rollout status deploy/portal
+```
 
 ## First-time setup
 

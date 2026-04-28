@@ -42,6 +42,18 @@ spec:
         app.kubernetes.io/managed-by: rpi-k8s-cluster
     spec:
       automountServiceAccountToken: false
+      # CI publishes amd64-only images on every push to main; multi-arch
+      # only fires for `v*.*.*` tags. Pin scheduling to amd64 nodes
+      # (the `julian-wiley-ubuntu-desktop` control plane) so we never
+      # land on the arm64 RPi5 workers and crash with exec-format-error.
+      # When a tagged release ships an arm64 layer too, drop this
+      # nodeSelector to spread across all 5 nodes.
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
@@ -49,7 +61,10 @@ spec:
         fsGroup: 1001
       containers:
         - name: portal
-          image: ghcr.io/julianwileymac/portal:latest
+          # Pin to a sha-tag rather than :latest so kubelet's
+          # imagePullPolicy: IfNotPresent caching can't strand the
+          # cluster on a stale image. Bump on every successful release.
+          image: ghcr.io/julianwileymac/portal:sha-d2f8c2b
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -67,19 +82,34 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          # Probes hit the NextAuth providers endpoint because it is:
+          #   - excluded from middleware (api/auth is in the middleware
+          #     matcher's negative-lookahead, so no redirect chains)
+          #   - always 200 (returns a JSON map of registered providers)
+          #   - cheap (no DB / OIDC round-trip)
+          # Probing `/` was misbehaving because Next.js's prefetch-aware
+          # rendering can briefly redirect anonymous visits to /app/
+          # behind the scenes during HTML negotiation, blowing the
+          # kubelet's 10-redirect ceiling.
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/auth/providers
               port: http
-            initialDelaySeconds: 20
+              httpHeaders:
+                - name: Accept
+                  value: application/json
+            initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/auth/providers
               port: http
-            initialDelaySeconds: 5
+              httpHeaders:
+                - name: Accept
+                  value: application/json
+            initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
