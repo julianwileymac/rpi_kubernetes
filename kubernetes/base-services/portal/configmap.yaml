@@ -37,3 +37,9 @@ data:
   # Secret. `common` issuer means multi-tenant; switch to your tenant id for
   # single-tenant.
   AUTH_MICROSOFT_ENTRA_ID_ISSUER: "https://login.microsoftonline.com/common/v2.0"
+
+  # Phase 3: live cluster KPIs. Pointed at the in-cluster Prometheus service
+  # produced by kube-prometheus-stack. Confirm the exact service name with
+  # `kubectl -n observability get svc | grep prometheus`. Empty value disables
+  # the live tile and the dashboard falls back to the mock numbers.
+  PROMETHEUS_URL: "http://prometheus-operated.observability.svc.cluster.local:9090"
