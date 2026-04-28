@@ -9,9 +9,15 @@ kind: Kustomization
 
 namespace: edge
 
+# NOTE: secret.yaml is NOT in the resources list. The
+# `cloudflared-credentials` Secret is created out-of-band via
+#   kubectl -n edge create secret generic cloudflared-credentials \
+#     --from-file=credentials.json=$HOME/.cloudflared/<tunnel-id>.json
+# (see README) so a `kubectl apply -k` does NOT clobber a real
+# tunnel JSON with the committed placeholder. The committed
+# secret.yaml stays as a template + bootstrap documentation.
 resources:
   - configmap.yaml
-  - secret.yaml
   - deployment.yaml
   - service.yaml
 

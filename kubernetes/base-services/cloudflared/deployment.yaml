@@ -48,7 +48,7 @@ spec:
         fsGroup: 65532
       containers:
         - name: cloudflared
-          image: cloudflare/cloudflared:2026.4.0
+          image: cloudflare/cloudflared:2026.3.0
           imagePullPolicy: IfNotPresent
           args:
             - tunnel
