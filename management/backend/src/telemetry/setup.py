@@ -1,79 +1,54 @@
-"""OpenTelemetry setup and configuration."""
+"""OpenTelemetry setup - delegates to the canonical ``rpi_k8s_sdk`` helper.
+
+The management backend used to maintain its own copy of the OTel bootstrap
+logic.  It now defers to :func:`rpi_k8s_sdk.tracing.configure_tracing` so the
+backend, the SDK, the pipelines workers, and the Agentic Quant Platform all
+behave identically (same endpoint resolution, same sampler, same instrumentor
+list).
+"""
 
 import logging
-
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from ..config import Settings
 
 logger = logging.getLogger(__name__)
 
 
-def setup_telemetry(settings: Settings) -> None:
-    """
-    Configure OpenTelemetry tracing.
+def setup_telemetry(settings: Settings, app=None) -> None:
+    """Configure OpenTelemetry tracing via the SDK helper.
 
-    Sets up:
-    - OTLP exporter to send traces to the collector
-    - FastAPI auto-instrumentation
-    - Redis auto-instrumentation (covers redis-py sync + asyncio)
-    - Custom resource attributes
+    Parameters
+    ----------
+    settings:
+        Loaded :class:`Settings` instance (drives endpoint + service name).
+    app:
+        Optional FastAPI application.  When provided, the FastAPI instrumentor
+        is attached so request spans show up automatically.
     """
+
     if not settings.telemetry.enabled:
         logger.info("OpenTelemetry disabled")
         return
 
-    # Create resource with service information
-    resource = Resource.create({
-        "service.name": settings.telemetry.service_name,
-        "service.version": "0.1.0",
-        "deployment.environment": "development",
-        "cluster.name": settings.cluster_name,
-    })
-
-    # Create tracer provider
-    provider = TracerProvider(resource=resource)
-
-    # Configure OTLP exporter
     try:
-        otlp_exporter = OTLPSpanExporter(
-            endpoint=settings.telemetry.exporter_endpoint,
-            insecure=True,  # For local development
+        from rpi_k8s_sdk.tracing import configure_tracing
+    except ImportError:
+        logger.warning(
+            "rpi_k8s_sdk not installed; falling back to no-op telemetry. "
+            "Install the SDK with `pip install -e ../sdk` to enable tracing."
         )
+        return
 
-        # Add batch processor for efficient export
-        processor = BatchSpanProcessor(otlp_exporter)
-        provider.add_span_processor(processor)
-
-        # Set as global tracer provider
-        trace.set_tracer_provider(provider)
-
-        # Instrument FastAPI
-        FastAPIInstrumentor.instrument()
-
-        # Instrument Redis (safe to call before any Redis client is created).
-        # Captures both sync (redis.Redis) and async (redis.asyncio) traffic.
-        try:
-            from opentelemetry.instrumentation.redis import RedisInstrumentor
-
-            RedisInstrumentor().instrument()
-            logger.info("Redis OTel instrumentation enabled")
-        except Exception as redis_err:  # pragma: no cover - optional dep
-            logger.warning(
-                "Redis OTel instrumentor unavailable: %s",
-                redis_err,
-            )
-
-        logger.info(
-            f"OpenTelemetry configured: exporting to {settings.telemetry.exporter_endpoint}"
-        )
-
-    except Exception as e:
-        logger.warning(f"Failed to configure OTLP exporter: {e}")
-        # Still set provider for local tracing
-        trace.set_tracer_provider(provider)
+    configure_tracing(
+        service_name=settings.telemetry.service_name,
+        endpoint=settings.telemetry.exporter_endpoint,
+        namespace="management",
+        instrument_kafka=False,
+        instrument_httpx=True,
+        instrument_fastapi_app=app,
+        instrument_redis_clients=True,
+    )
+    logger.info(
+        "OpenTelemetry configured via SDK: exporting to %s",
+        settings.telemetry.exporter_endpoint,
+    )

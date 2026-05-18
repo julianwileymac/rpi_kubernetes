@@ -1,16 +1,20 @@
 """
 Kubernetes cluster management service.
 
-Provides operations for querying cluster state, nodes, pods, and services.
+Provides operations for querying cluster state, nodes, pods, and services,
+plus the streaming primitives (logs follow, pod exec) used by the management
+console's WebSocket endpoints.
 """
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
+from kubernetes.stream import stream as k8s_stream
 
 from ..config import Settings
 from ..models.cluster import (
@@ -427,3 +431,380 @@ class KubernetesService:
         """Get list of namespace names."""
         namespaces = self.core_api.list_namespace()
         return [ns.metadata.name for ns in namespaces.items]
+
+    # ------------------------------------------------------------------
+    # Streaming primitives - log follow and pod exec.
+    # ------------------------------------------------------------------
+
+    async def tail_pod_logs(
+        self,
+        name: str,
+        namespace: str,
+        container: Optional[str] = None,
+        tail_lines: int = 200,
+    ) -> AsyncIterator[str]:
+        """Yield pod log lines as they are emitted.
+
+        The kubernetes client does not expose an async log-follow API, so we
+        run the blocking generator on a worker thread and pump lines back
+        into asyncio via a queue.  This pattern is what the FastAPI WebSocket
+        endpoints use to stream logs to the browser.
+
+        Yields decoded text lines (newline stripped).
+        """
+
+        self._initialize()
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[Optional[str]] = asyncio.Queue(maxsize=1024)
+
+        def _producer() -> None:
+            try:
+                resp = self.core_api.read_namespaced_pod_log(
+                    name=name,
+                    namespace=namespace,
+                    container=container,
+                    follow=True,
+                    tail_lines=tail_lines,
+                    _preload_content=False,
+                )
+                for raw in resp.stream():
+                    line = raw.decode("utf-8", errors="replace").rstrip("\n")
+                    asyncio.run_coroutine_threadsafe(queue.put(line), loop)
+            except ApiException as exc:
+                msg = f"<log stream error: {exc.reason or exc}>"
+                asyncio.run_coroutine_threadsafe(queue.put(msg), loop)
+            except Exception as exc:  # noqa: BLE001
+                msg = f"<log stream crashed: {exc}>"
+                asyncio.run_coroutine_threadsafe(queue.put(msg), loop)
+            finally:
+                asyncio.run_coroutine_threadsafe(queue.put(None), loop)
+
+        task = loop.run_in_executor(None, _producer)
+        try:
+            while True:
+                line = await queue.get()
+                if line is None:
+                    break
+                yield line
+        finally:
+            # Ensure the producer thread can exit cleanly even if the consumer
+            # disconnects mid-stream.
+            task.cancel()
+
+    def exec_in_pod(
+        self,
+        name: str,
+        namespace: str,
+        command: list[str],
+        container: Optional[str] = None,
+        stdin: bool = True,
+        tty: bool = True,
+    ):
+        """Open an interactive exec session in a pod and return the WS-like client.
+
+        The returned object is the kubernetes ``WSClient`` from
+        ``kubernetes.stream.stream`` - it exposes ``read_stdout``,
+        ``write_stdin``, ``is_open``, ``close`` etc.  The FastAPI WebSocket
+        endpoint pumps bytes between the browser socket and this object.
+        """
+
+        self._initialize()
+        return k8s_stream(
+            self.core_api.connect_get_namespaced_pod_exec,
+            name=name,
+            namespace=namespace,
+            command=command,
+            container=container,
+            stderr=True,
+            stdin=stdin,
+            stdout=True,
+            tty=tty,
+            _preload_content=False,
+        )
+
+    # ------------------------------------------------------------------
+    # Service catalog - the single source of truth driving the dashboard.
+    # ------------------------------------------------------------------
+
+    def service_catalog(self) -> list[dict]:
+        """Return the curated list of platform services tracked by the UI.
+
+        Each entry is a flat dict with the fields the frontend needs to render
+        a service card: display name, namespace, the in-cluster service to
+        probe for health, and the deep-link metadata (Grafana/Jaeger/etc).
+        Adding a new service to the dashboard is one entry here.
+        """
+
+        return [
+            {
+                "key": "minio",
+                "display_name": "MinIO",
+                "category": "data",
+                "namespace": "data-services",
+                "service": "minio",
+                "port": 9000,
+                "health_path": "/minio/health/ready",
+                "console_path": "/minio/",
+                "ingress_host": "minio.local",
+            },
+            {
+                "key": "postgresql",
+                "display_name": "PostgreSQL",
+                "category": "data",
+                "namespace": "data-services",
+                "service": "postgresql",
+                "port": 5432,
+            },
+            {
+                "key": "redis",
+                "display_name": "Redis 8 Stack",
+                "category": "data",
+                "namespace": "data-services",
+                "service": "redis",
+                "port": 6379,
+            },
+            {
+                "key": "kafka",
+                "display_name": "Kafka (Strimzi)",
+                "category": "streaming",
+                "namespace": "data-services",
+                "service": "trading-kafka-kafka-bootstrap",
+                "port": 9092,
+            },
+            {
+                "key": "schema-registry",
+                "display_name": "Apicurio Schema Registry",
+                "category": "streaming",
+                "namespace": "data-services",
+                "service": "apicurio-registry",
+                "port": 8080,
+                "health_path": "/health/live",
+                "ingress_host": "schema-registry.local",
+            },
+            {
+                "key": "flink",
+                "display_name": "Flink Session",
+                "category": "streaming",
+                "namespace": "flink",
+                "service": "flink-trading-session-rest",
+                "port": 8081,
+                "ingress_host": "flink.local",
+            },
+            {
+                "key": "mlflow",
+                "display_name": "MLflow Tracking",
+                "category": "mlops",
+                "namespace": "ml-platform",
+                "service": "mlflow",
+                "port": 5000,
+                "health_path": "/health",
+                "ingress_host": "mlflow.local",
+            },
+            {
+                "key": "datahub",
+                "display_name": "DataHub",
+                "category": "mlops",
+                "namespace": "data-services",
+                "service": "datahub-datahub-frontend",
+                "port": 9002,
+                "ingress_host": "datahub.local",
+            },
+            {
+                "key": "argo-workflows",
+                "display_name": "Argo Workflows",
+                "category": "mlops",
+                "namespace": "mlops",
+                "service": "argo-workflows-server",
+                "port": 2746,
+                "ingress_host": "argo.local",
+            },
+            {
+                "key": "dagster",
+                "display_name": "Dagster",
+                "category": "mlops",
+                "namespace": "mlops",
+                "service": "dagster-webserver",
+                "port": 80,
+                "ingress_host": "dagster.local",
+            },
+            {
+                "key": "jupyterhub",
+                "display_name": "JupyterHub",
+                "category": "mlops",
+                "namespace": "development",
+                "service": "jupyterhub",
+                "port": 8000,
+                "ingress_host": "jupyter.local",
+            },
+            {
+                "key": "milvus",
+                "display_name": "Milvus",
+                "category": "ml-serving",
+                "namespace": "data-services",
+                "service": "milvus",
+                "port": 19530,
+                "ingress_host": "milvus.local",
+            },
+            {
+                "key": "chromadb",
+                "display_name": "ChromaDB",
+                "category": "ml-serving",
+                "namespace": "data-services",
+                "service": "chromadb",
+                "port": 8000,
+            },
+            {
+                "key": "vllm-cpu",
+                "display_name": "vLLM (CPU)",
+                "category": "ml-serving",
+                "namespace": "ml-platform",
+                "service": "vllm-cpu-small",
+                "port": 8000,
+                "ingress_host": "vllm.local",
+            },
+            {
+                "key": "vllm-gpu",
+                "display_name": "vLLM (GPU)",
+                "category": "ml-serving",
+                "namespace": "ml-platform",
+                "service": "vllm-gpu",
+                "port": 8000,
+                "ingress_host": "vllm-gpu.local",
+            },
+            {
+                "key": "ragflow",
+                "display_name": "RAGFlow",
+                "category": "ml-serving",
+                "namespace": "data-services",
+                "service": "ragflow",
+                "port": 9380,
+            },
+            {
+                "key": "management-backend",
+                "display_name": "Management API",
+                "category": "platform",
+                "namespace": "management",
+                "service": "management-backend",
+                "port": 8080,
+                "health_path": "/api/health",
+            },
+            {
+                "key": "management-frontend",
+                "display_name": "Management Console",
+                "category": "platform",
+                "namespace": "management",
+                "service": "management-frontend",
+                "port": 3000,
+                "ingress_host": "console.local",
+            },
+            {
+                "key": "otel-collector",
+                "display_name": "OpenTelemetry Collector",
+                "category": "observability",
+                "namespace": "observability",
+                "service": "otel-collector",
+                "port": 13133,
+                "health_path": "/",
+            },
+            {
+                "key": "jaeger",
+                "display_name": "Jaeger",
+                "category": "observability",
+                "namespace": "observability",
+                "service": "jaeger-query",
+                "port": 16686,
+                "ingress_host": "jaeger.local",
+            },
+            {
+                "key": "loki",
+                "display_name": "Loki",
+                "category": "observability",
+                "namespace": "observability",
+                "service": "loki",
+                "port": 3100,
+                "health_path": "/ready",
+                "ingress_host": "loki.local",
+            },
+            {
+                "key": "vector",
+                "display_name": "Vector (log shipper)",
+                "category": "observability",
+                "namespace": "observability",
+                "service": "vector",
+                "port": 8686,
+                "health_path": "/health",
+            },
+            {
+                "key": "prometheus",
+                "display_name": "Prometheus",
+                "category": "observability",
+                "namespace": "observability",
+                "service": "prometheus-prometheus",
+                "port": 9090,
+                "ingress_host": "prometheus.local",
+            },
+            {
+                "key": "victoriametrics",
+                "display_name": "VictoriaMetrics",
+                "category": "observability",
+                "namespace": "observability",
+                "service": "victoriametrics",
+                "port": 8428,
+                "health_path": "/health",
+            },
+            {
+                "key": "grafana",
+                "display_name": "Grafana",
+                "category": "observability",
+                "namespace": "observability",
+                "service": "prometheus-grafana",
+                "port": 80,
+                "ingress_host": "grafana.local",
+            },
+        ]
+
+    async def service_status(self, key: str) -> dict:
+        """Return live deployment / pod status for a curated catalog entry."""
+
+        self._initialize()
+        catalog = {entry["key"]: entry for entry in self.service_catalog()}
+        entry = catalog.get(key)
+        if entry is None:
+            raise KeyError(key)
+
+        ns = entry["namespace"]
+        selector = f"app.kubernetes.io/name={entry['service']}"
+        try:
+            pods = self.core_api.list_namespaced_pod(
+                namespace=ns, label_selector=selector
+            ).items
+        except ApiException:
+            pods = []
+
+        # Fall back to a pod-name prefix match when the chart label differs.
+        if not pods:
+            try:
+                all_pods = self.core_api.list_namespaced_pod(namespace=ns).items
+            except ApiException:
+                all_pods = []
+            pods = [p for p in all_pods if p.metadata.name.startswith(entry["service"])]
+
+        ready = sum(
+            1
+            for p in pods
+            if p.status.phase == "Running"
+            and all((cs.ready for cs in (p.status.container_statuses or [])))
+        )
+        total = len(pods)
+        image = ""
+        if pods and pods[0].spec.containers:
+            image = pods[0].spec.containers[0].image
+
+        return {
+            **entry,
+            "replicas": total,
+            "ready_replicas": ready,
+            "healthy": total > 0 and ready == total,
+            "image": image,
+            "pods": [p.metadata.name for p in pods],
+        }

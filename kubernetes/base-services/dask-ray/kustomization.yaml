@@ -8,6 +8,8 @@ resources:
   - dask-worker.yaml
   - ray-cluster.yaml
 
-commonLabels:
-  app.kubernetes.io/component: distributed-compute
-  app.kubernetes.io/part-of: rpi-k8s-platform
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/component: distributed-compute
+      app.kubernetes.io/part-of: rpi-k8s-platform

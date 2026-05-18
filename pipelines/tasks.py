@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from datetime import UTC, datetime
@@ -14,6 +15,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from .config import PipelineConfig
+from .metadata import emit_minio_object, emit_pipeline_run
 from .minio_io import get_bytes, get_minio_client, put_bytes, put_json
 from .postgres_io import (
     ensure_pipeline_tables,
@@ -25,6 +27,46 @@ from .postgres_io import (
 )
 from .sources import fetch_filesystem, fetch_http, fetch_rest, fetch_s3
 from .vector_io import build_chunk_records, upsert_chromadb, upsert_milvus
+
+logger = logging.getLogger(__name__)
+
+# Make get_tracer importable from this module so each task function can wrap
+# its work in a span without importing the SDK directly (keeps the dependency
+# soft-optional via the SDK's no-op fallback).
+try:
+    from rpi_k8s_sdk.tracing import configure_tracing as _configure_tracing
+    from rpi_k8s_sdk.tracing import get_tracer
+except ImportError:  # pragma: no cover - SDK missing in slim builds
+    def get_tracer(name: str = "pipelines.tasks"):
+        class _NoopSpan:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def set_attribute(self, *_args, **_kwargs):
+                return None
+
+        class _NoopTracer:
+            def start_as_current_span(self, *_args, **_kwargs):
+                return _NoopSpan()
+
+        return _NoopTracer()
+
+    _configure_tracing = None
+else:
+    try:
+        _configure_tracing(
+            service_name=os.environ.get("OTEL_SERVICE_NAME", "pipelines-tasks"),
+            namespace="mlops",
+            instrument_kafka=False,
+            instrument_httpx=True,
+        )
+    except Exception:  # pragma: no cover - tracing must never break worker boot
+        logger.exception("rpi_k8s_sdk tracing bootstrap failed; continuing without OTel")
+
+tracer = get_tracer("pipelines.tasks")
 
 
 def _utc_now() -> datetime:
@@ -160,6 +202,28 @@ def run_raw_ingest(
         metadata=metadata,
     )
     put_json(client=client, bucket=bucket, key=f"{object_key}.metadata.json", payload=metadata)
+    emit_minio_object(
+        config,
+        bucket=bucket,
+        key=object_key,
+        properties={
+            **metadata,
+            "content_type": payload.content_type,
+            "size_bytes": len(payload.body),
+            "description": f"Raw ingest output for {source_name}",
+        },
+    )
+    emit_pipeline_run(
+        config,
+        name=f"raw-ingest/{source_name}",
+        properties={
+            "source_type": source_type,
+            "source_uri": source_uri,
+            "bucket": bucket,
+            "object_key": object_key,
+            "status": "ok",
+        },
+    )
 
     return {
         "status": "ok",
@@ -224,6 +288,19 @@ def run_heavy_transform(
                 records=_extract_records_from_payload(transformed_bytes),
                 source_key=output_key,
             )
+    emit_minio_object(
+        config,
+        bucket=target_bucket_name,
+        key=output_key,
+        properties={
+            "source_bucket": source_bucket_name,
+            "source_key": source_key,
+            "transform_mode": transform_mode,
+            "target_table": target_table or "",
+            "loaded_rows": loaded_rows,
+            "description": "Transformed pipeline output",
+        },
+    )
 
     return {
         "status": "ok",

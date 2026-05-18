@@ -68,9 +68,11 @@ datahub-gms:
       effect: "NoSchedule"
 
   extraEnvs:
-    # Iceberg Catalog support
+    # Iceberg REST catalog support is served by Apache Polaris. DataHub remains
+    # a metadata consumer / lineage publisher rather than the authoritative
+    # Iceberg catalog endpoint.
     - name: DH_ICEBERG_ENABLED
-      value: "true"
+      value: "false"
     - name: DH_ICEBERG_DATA_ROOT
       value: "s3://iceberg-warehouse/"
     - name: AWS_ACCESS_KEY_ID

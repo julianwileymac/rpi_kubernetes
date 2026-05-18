@@ -35,7 +35,7 @@ spec:
                   name: minio-credentials
                   key: root-password
             - name: MINIO_PROMETHEUS_AUTH_TYPE
-              value: "public"
+              value: "jwt"
           ports:
             - name: api
               containerPort: 9000

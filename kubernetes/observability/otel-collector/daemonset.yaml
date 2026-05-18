@@ -15,7 +15,12 @@ spec:
       serviceAccountName: otel-collector
       containers:
         - name: otel-collector
-          image: otel/opentelemetry-collector-contrib:0.91.0
+          # Pinned to a current stable contrib build.  The previous v0.91.0
+          # image predates the `filelog.container` operator and the
+          # `k8sattributes.node_from_env_var` field that the new configmap
+          # relies on for log enrichment.  v0.114.0 (Nov 2024) is the first
+          # release line that ships both with multi-arch (amd64+arm64) images.
+          image: otel/opentelemetry-collector-contrib:0.114.0
           command:
             - /otelcol-contrib
             - --config=/etc/otel/config.yaml

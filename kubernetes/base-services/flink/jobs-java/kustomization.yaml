@@ -19,6 +19,8 @@ resources:
   - math-transform.yaml
   - math-operator.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: rpi-k8s-platform
-  app.kubernetes.io/component: flink-java-indicator-job
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: rpi-k8s-platform
+      app.kubernetes.io/component: flink-java-indicator-job

@@ -23,6 +23,8 @@ resources:
   - cronworkflow-av-universe-sync.yaml
   - cronworkflow-av-daily-refresh.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: rpi-k8s-platform
-  data-provider: alphavantage
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: rpi-k8s-platform
+      data-provider: alphavantage

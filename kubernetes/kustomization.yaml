@@ -15,11 +15,21 @@ metadata:
 commonLabels:
   app.kubernetes.io/managed-by: rpi-k8s-cluster
   app.kubernetes.io/part-of: rpi-k8s-platform
+  # Phase 5 (FinOps Governance) — mandatory cost-attribution tags.
+  # Mirrored from AQP's Settings.finops_labels() defaults so every
+  # workload deployed through this root Kustomization is attributable.
+  project: aqp-default
+  cost_center: quant-research-01
+  owner: system-orchestrator
+  data_classification: proprietary-alpha
 
 # Resources to include
 resources:
   # Namespaces first
   - namespaces/namespaces.yaml
+
+  # Admission governance
+  - policies/finops/
   
   # Storage
   - storage/
@@ -34,7 +44,9 @@ resources:
   - base-services/management/
   - base-services/chromadb/
   - base-services/ragflow/
+  - base-services/polaris/
   - base-services/datahub/
+  - base-services/airbyte/
 
   # Streaming platform
   - base-services/kafka/

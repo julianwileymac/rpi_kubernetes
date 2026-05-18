@@ -9,7 +9,9 @@ resources:
   - service.yaml
   - ingress.yaml
 
-commonLabels:
-  app.kubernetes.io/name: jaeger
-  app.kubernetes.io/component: tracing
-  app.kubernetes.io/part-of: rpi-k8s-platform
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: jaeger
+      app.kubernetes.io/component: tracing
+      app.kubernetes.io/part-of: rpi-k8s-platform

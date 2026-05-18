@@ -46,10 +46,18 @@ data:
     # Public hostnames -> in-cluster targets. Order matters; last entry MUST
     # be the catch-all `service: http_status:404` rule per Cloudflare docs.
     ingress:
+      # IMPORTANT: do NOT rewrite httpHostHeader. The browser stores
+      # OAuth state cookies (PKCE code_verifier, csrf, callback-url)
+      # against the hostname IT visited, not against the upstream Host
+      # cloudflared injects. If we rewrite www -> apex here, the
+      # browser sets cookies on www, NextAuth issues redirects to
+      # apex, and the callback fails with
+      #   InvalidCheck: pkceCodeVerifier value could not be parsed.
+      # By preserving the original host, the entire OAuth flow stays
+      # on whichever subdomain the user landed on.
       - hostname: julianwiley.com
         service: http://ingress-nginx-controller.ingress.svc.cluster.local:80
         originRequest:
-          httpHostHeader: julianwiley.com
           connectTimeout: 30s
           tlsTimeout: 10s
           noHappyEyeballs: true
@@ -57,7 +65,7 @@ data:
       - hostname: www.julianwiley.com
         service: http://ingress-nginx-controller.ingress.svc.cluster.local:80
         originRequest:
-          httpHostHeader: julianwiley.com
+          connectTimeout: 30s
 
       # Catch-all — required by cloudflared.
       - service: http_status:404

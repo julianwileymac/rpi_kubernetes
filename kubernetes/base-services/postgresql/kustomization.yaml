@@ -9,7 +9,9 @@ resources:
   - deployment.yaml
   - service.yaml
 
-commonLabels:
-  app.kubernetes.io/name: postgresql
-  app.kubernetes.io/component: database
-  app.kubernetes.io/part-of: rpi-k8s-platform
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: postgresql
+      app.kubernetes.io/component: database
+      app.kubernetes.io/part-of: rpi-k8s-platform

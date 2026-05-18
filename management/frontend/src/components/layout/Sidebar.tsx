@@ -16,12 +16,14 @@ import {
   Waves,
   FileText,
   LineChart,
+  Workflow,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
   { name: 'Nodes', href: '/nodes', icon: Server },
   { name: 'Deployments', href: '/deployments', icon: Boxes },
+  { name: 'Services', href: '/services', icon: Workflow },
   { name: 'Hardware', href: '/hardware', icon: HardDrive },
   { name: 'Monitoring', href: '/monitoring', icon: Activity },
   { name: 'MLFlow', href: '/mlflow', icon: FlaskConical },
@@ -100,8 +102,8 @@ export function Sidebar() {
         })}
       </div>
 
-      {/* Cluster Status */}
-      <div className="px-4 py-4 border-t border-surface-800">
+      {/* Cluster Status + Identity (Phase 8 of multi-tenant rollout) */}
+      <div className="px-4 py-4 border-t border-surface-800 space-y-2">
         <div className="flex items-center gap-2 text-xs text-surface-500">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75"></span>
@@ -109,7 +111,34 @@ export function Sidebar() {
           </span>
           Cluster Online
         </div>
+        <MgmtIdentityChip />
       </div>
     </aside>
+  )
+}
+
+
+function MgmtIdentityChip() {
+  // Lazy import + dynamic check so the Sidebar renders cleanly in
+  // local-mode (Auth0 not installed / env not set). The Auth0 SDK
+  // requires <Auth0Provider> in the tree; the chip degrades to
+  // "local mode" when that isn't present.
+  if (typeof window === 'undefined') return null
+
+  const domain = process.env.NEXT_PUBLIC_AUTH0_DOMAIN || ''
+  if (!domain) {
+    return (
+      <div className="text-[10px] text-surface-600">
+        Local mode (no IdP)
+      </div>
+    )
+  }
+  return (
+    <a
+      href="/auth/profile"
+      className="block text-[10px] font-mono text-surface-500 hover:text-surface-300"
+    >
+      Auth0 protected ({domain})
+    </a>
   )
 }

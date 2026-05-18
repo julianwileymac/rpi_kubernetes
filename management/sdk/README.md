@@ -11,6 +11,8 @@ The SDK wraps:
 3. The management FastAPI endpoints under `/kafka` and `/flink` for granular
    Kafka/Flink control.
 4. The Flink REST API (job/metric polling, savepoint queries).
+5. Local access profiles for MinIO, MLflow, DataHub/Iceberg, OpenTelemetry,
+   Argo pipelines, and vLLM/KServe model serving.
 
 ## Install
 
@@ -20,6 +22,13 @@ pip install -e 'management/sdk[streaming]'
 
 Extras:
 
+- `local` - all local lab access clients.
+- `storage` - boto3-backed MinIO helpers.
+- `mlflow` - MLflow tracking and model registry helpers.
+- `datahub` - DataHub REST emitter and recipe runner.
+- `iceberg` - PyIceberg REST catalog helpers.
+- `kubernetes` - Kubernetes/Argo pipeline controls.
+- `serving` - Hugging Face model download helpers.
 - `streaming` - `confluent-kafka`, `aiokafka`, `fastavro`, `httpx`,
   `opentelemetry`.
 - `dev` - `pytest`, `ruff`.
@@ -55,3 +64,39 @@ flink.savepoint("indicator-compute")
 ```
 
 See the module docstrings for reference.
+
+## Local lab access
+
+```python
+from rpi_k8s_sdk import (
+    ArgoPipelineClient,
+    DataHubClient,
+    IcebergClient,
+    LocalTunnelManager,
+    MinioClient,
+    MLflowClient,
+    ModelStore,
+    load_settings,
+)
+
+settings = load_settings()
+
+# Keep private APIs private: use tunnels for GMS/Iceberg and OTLP.
+tunnels = LocalTunnelManager(settings)
+with tunnels.started(settings.datahub_gms, settings.otel_collector):
+    MinioClient(settings).health()
+    MLflowClient(settings).ensure_experiment("local-smoke")
+    DataHubClient(settings).mlflow_recipe()
+    IcebergClient(settings).config()
+
+    ArgoPipelineClient(settings).raw_ingest(
+        source_name="sample",
+        source_uri="https://example.com/data.json",
+    )
+
+# Model workflow: download locally, push to MinIO, then render a serving spec.
+store = ModelStore(settings)
+model_dir = store.download_hf_snapshot("TinyLlama/TinyLlama-1.1B-Chat-v1.0", local_dir=".models/tinyllama")
+artifact = store.upload_directory("TinyLlama/TinyLlama-1.1B-Chat-v1.0", model_dir)
+print(artifact.s3_uri)
+```

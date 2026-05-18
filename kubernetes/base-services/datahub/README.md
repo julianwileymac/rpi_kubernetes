@@ -117,13 +117,19 @@ Run ingestion:
 datahub ingest -c dbt-recipe.yaml
 ```
 
-## Native Ingestion CronJobs (PostgreSQL, MinIO/S3, MLflow)
+## Native Ingestion CronJobs
 
 The repository includes native DataHub ingestion recipes and scheduled CronJobs:
 
 - `datahub-ingest-postgres`
 - `datahub-ingest-minio-s3`
 - `datahub-ingest-mlflow`
+- `datahub-ingest-iceberg`
+- `datahub-ingest-aqp-iceberg`
+- `datahub-ingest-aqp-mlflow`
+- `datahub-ingest-kafka`
+- `datahub-ingest-grafana`
+- `datahub-ingest-aqp-openapi`
 
 All CronJobs are created in **suspended** mode by default for safe rollout.
 
@@ -143,6 +149,10 @@ Naming conventions used for operations:
 ### Enable Ingestion Jobs
 
 1. Set real credentials/token in `secret-ingestion-secrets.yaml`.
+   - `DATAHUB_TOKEN` for DataHub writes
+   - `INGEST_POSTGRES_PASSWORD` for PostgreSQL ingestion
+   - `INGEST_MINIO_*` for S3/MinIO and Iceberg warehouse reads
+   - `INGEST_GRAFANA_SERVICE_ACCOUNT_TOKEN` for Grafana dashboard ingestion
 2. Apply DataHub kustomize resources:
 
 ```bash
@@ -155,6 +165,10 @@ kubectl apply -k kubernetes/base-services/datahub/
 kubectl patch cronjob -n data-services datahub-ingest-postgres --type merge -p '{"spec":{"suspend":false}}'
 kubectl patch cronjob -n data-services datahub-ingest-minio-s3 --type merge -p '{"spec":{"suspend":false}}'
 kubectl patch cronjob -n data-services datahub-ingest-mlflow --type merge -p '{"spec":{"suspend":false}}'
+kubectl patch cronjob -n data-services datahub-ingest-iceberg --type merge -p '{"spec":{"suspend":false}}'
+kubectl patch cronjob -n data-services datahub-ingest-kafka --type merge -p '{"spec":{"suspend":false}}'
+kubectl patch cronjob -n data-services datahub-ingest-grafana --type merge -p '{"spec":{"suspend":false}}'
+kubectl patch cronjob -n data-services datahub-ingest-aqp-openapi --type merge -p '{"spec":{"suspend":false}}'
 ```
 
 4. Trigger a manual run (example):
@@ -164,13 +178,53 @@ kubectl create job -n data-services --from=cronjob/datahub-ingest-postgres datah
 kubectl logs -n data-services job/datahub-ingest-postgres-manual
 ```
 
-## Metadata Bridge (Argo, Dagster, Milvus, Chroma)
+## Source Inventory
+
+| Source | DataHub path | Notes |
+| --- | --- | --- |
+| rpi Kubernetes MinIO | `recipe-minio-s3.yaml` | Scans pipeline, model, MLflow, AQP, and Iceberg buckets/prefixes. |
+| rpi Kubernetes Iceberg | `recipe-iceberg-rest.yaml` | DataHub GMS Iceberg REST catalog, platform instance `rpi-kubernetes`. |
+| AQP Iceberg lake | `recipe-aqp-iceberg-rest.yaml` | Same REST catalog with AQP warehouse/platform instance naming. |
+| rpi/AQP MLflow | `recipe-mlflow*.yaml` | Logical platform instances over the shared in-cluster MLflow tracking service. |
+| rpi Kafka | `recipe-kafka.yaml` | Strimzi bootstrap plus Apicurio schema registry. |
+| rpi Grafana | `recipe-grafana.yaml` | Requires a Grafana service account token. |
+| AQP APIs | `recipe-aqp-openapi.yaml` | Ingests `http://api.aqp.svc.cluster.local:8000/openapi.json`. |
+
+## Argo Orchestration
+
+`kubernetes/mlops/pipelines/workflowtemplate-datahub-ingestion.yaml` can trigger
+groups of the suspended DataHub CronJobs from Argo:
+
+```bash
+argo submit -n mlops --from workflowtemplate/datahub-ingestion \
+  -p source_group=all \
+  -p job_suffix=manual
+```
+
+Supported `source_group` values are `all`, `lakehouse`, `mlflow`, `platform`,
+`api`, and `bridge`. The template uses the `argo-workflow` service account and
+the `rbac-argo-datahub-ingestion.yaml` RoleBinding to create and wait on jobs in
+the `data-services` namespace.
+
+`cronworkflow-datahub-ingestion-daily.yaml` adds a suspended daily Argo schedule
+for the full sync.
+
+## Dagster Orchestration
+
+Dagster user code in `pipelines/dagster_user_code/datahub_assets.py` exposes
+assets for the same source groups and submits the Argo `datahub-ingestion`
+WorkflowTemplate. The assets are registered in `definitions.py` as individual
+jobs plus `datahub_full_sync_job` and `datahub_daily_schedule`.
+
+## Metadata Bridge (Argo, Dagster, Prefect, Flink, Milvus, Chroma)
 
 The hybrid metadata bridge job emits metadata directly to DataHub for sources that
 are not fully covered by native connectors in this repository:
 
 - Argo Workflows (`WorkflowTemplate` / `CronWorkflow` naming metadata)
 - Dagster assets/jobs naming metadata
+- Prefect flow naming metadata (runtime is managed separately)
+- Flink job naming metadata
 - Milvus collection metadata
 - ChromaDB collection metadata
 

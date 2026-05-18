@@ -206,6 +206,53 @@ export interface ArtifactIngestPayload {
   owner?: string
 }
 
+export interface PodInfo {
+  name: string
+  namespace: string
+  phase: string
+  node_name?: string
+  ip_address?: string
+  containers: string[]
+  restarts: number
+  created_at: string
+  labels: Record<string, string>
+}
+
+export interface ServiceCatalogEntry {
+  key: string
+  display_name: string
+  category: string
+  namespace: string
+  service: string
+  port: number
+  health_path?: string
+  console_path?: string
+  ingress_host?: string
+}
+
+export interface ServiceSummary extends ServiceCatalogEntry {
+  replicas: number
+  ready_replicas: number
+  healthy: boolean
+  image: string
+  pods: string[]
+  error?: string
+}
+
+export interface DeploymentInfo {
+  name: string
+  namespace: string
+  replicas: number
+  ready_replicas: number
+  available_replicas: number
+  updated_replicas: number
+  strategy: string
+  image: string
+  created_at: string
+  labels: Record<string, string>
+  conditions?: Array<{ type: string; status: string; reason?: string; message?: string }>
+}
+
 export const clusterApi = {
   async getClusterInfo(): Promise<ClusterInfo> {
     const response = await apiClient.get<ClusterInfo>('/cluster')
@@ -215,10 +262,226 @@ export const clusterApi = {
     const response = await apiClient.get<NodeInfo[]>('/cluster/nodes')
     return response.data
   },
+  async getNode(name: string): Promise<NodeInfo> {
+    const response = await apiClient.get<NodeInfo>(`/cluster/nodes/${name}`)
+    return response.data
+  },
   async getServices(): Promise<ServiceInfo[]> {
     const response = await apiClient.get<ServiceInfo[]>('/cluster/services')
     return response.data
   },
+  async getServiceCatalog(): Promise<ServiceCatalogEntry[]> {
+    const response = await apiClient.get<ServiceCatalogEntry[]>('/cluster/services/catalog')
+    return response.data
+  },
+  async getServicesSummary(): Promise<ServiceSummary[]> {
+    const response = await apiClient.get<ServiceSummary[]>('/cluster/services/summary')
+    return response.data
+  },
+  async listPods(namespace?: string): Promise<PodInfo[]> {
+    const response = await apiClient.get<PodInfo[]>('/cluster/pods', {
+      params: namespace ? { namespace } : undefined,
+    })
+    return response.data
+  },
+  async getPodLogs(
+    namespace: string,
+    name: string,
+    options: { container?: string; tailLines?: number } = {},
+  ): Promise<{ logs: string }> {
+    const response = await apiClient.get<{ logs: string }>(
+      `/cluster/pods/${namespace}/${name}/logs`,
+      {
+        params: {
+          container: options.container,
+          tail_lines: options.tailLines ?? 200,
+        },
+      },
+    )
+    return response.data
+  },
+}
+
+export const deploymentsApi = {
+  async list(namespace?: string): Promise<DeploymentInfo[]> {
+    const response = await apiClient.get<DeploymentInfo[]>('/deployments', {
+      params: namespace ? { namespace } : undefined,
+    })
+    return response.data
+  },
+  async scale(namespace: string, name: string, replicas: number): Promise<unknown> {
+    const response = await apiClient.post(
+      `/deployments/${namespace}/${name}/scale`,
+      { replicas },
+    )
+    return response.data
+  },
+  async restart(namespace: string, name: string): Promise<unknown> {
+    const response = await apiClient.post(`/deployments/${namespace}/${name}/restart`)
+    return response.data
+  },
+  async rollback(namespace: string, name: string): Promise<unknown> {
+    const response = await apiClient.post(`/deployments/${namespace}/${name}/rollback`)
+    return response.data
+  },
+}
+
+export interface MLflowExperiment {
+  experiment_id: string
+  name: string
+  artifact_location?: string
+  lifecycle_stage?: string
+  creation_time?: number
+  last_update_time?: number
+  tags?: Array<{ key: string; value: string }>
+}
+
+export interface MLflowRun {
+  run_id?: string
+  info?: {
+    run_id: string
+    experiment_id: string
+    user_id?: string
+    status?: string
+    start_time?: number
+    end_time?: number
+    artifact_uri?: string
+    lifecycle_stage?: string
+    run_name?: string
+  }
+  data?: {
+    metrics?: Array<{ key: string; value: number; timestamp?: number; step?: number }>
+    params?: Array<{ key: string; value: string }>
+    tags?: Array<{ key: string; value: string }>
+  }
+}
+
+export interface MLflowRegisteredModel {
+  name: string
+  creation_timestamp?: number
+  last_updated_timestamp?: number
+  description?: string
+  latest_versions?: Array<{
+    name: string
+    version: string
+    creation_timestamp?: number
+    last_updated_timestamp?: number
+    current_stage?: string
+    source?: string
+    run_id?: string
+    status?: string
+  }>
+  tags?: Array<{ key: string; value: string }>
+}
+
+export const mlflowApi = {
+  async health(): Promise<{ healthy: boolean }> {
+    const response = await apiClient.get<{ healthy: boolean }>('/mlflow/health')
+    return response.data
+  },
+  async listExperiments(): Promise<MLflowExperiment[]> {
+    const response = await apiClient.get<MLflowExperiment[]>('/mlflow/experiments')
+    return response.data
+  },
+  async listRuns(params: {
+    experimentIds?: string
+    filterString?: string
+    maxResults?: number
+  } = {}): Promise<MLflowRun[]> {
+    const response = await apiClient.get<MLflowRun[]>('/mlflow/runs', {
+      params: {
+        experiment_ids: params.experimentIds,
+        filter_string: params.filterString,
+        max_results: params.maxResults ?? 50,
+      },
+    })
+    return response.data
+  },
+  async listModels(): Promise<MLflowRegisteredModel[]> {
+    const response = await apiClient.get<MLflowRegisteredModel[]>('/mlflow/models')
+    return response.data
+  },
+  async getModelVersions(name: string): Promise<MLflowRegisteredModel['latest_versions']> {
+    const response = await apiClient.get(
+      `/mlflow/models/${encodeURIComponent(name)}/versions`,
+    )
+    return response.data
+  },
+}
+
+export const observabilityApi = {
+  async getLinks(): Promise<Record<string, string>> {
+    const response = await apiClient.get<Record<string, string>>('/observability/links')
+    return response.data
+  },
+  iframeUrl(tool: string, path?: string): string {
+    const suffix = path ? `?path=${encodeURIComponent(path)}` : ''
+    return `/api/observability/iframe/${tool}${suffix}`
+  },
+}
+
+export interface JaegerTraceSummary {
+  traceID: string
+  spans: Array<{
+    spanID: string
+    operationName: string
+    startTime: number
+    duration: number
+    tags?: Array<{ key: string; type: string; value: unknown }>
+    process?: { serviceName?: string }
+  }>
+  processes?: Record<string, { serviceName?: string; tags?: unknown[] }>
+}
+
+export const tracesApi = {
+  async listServices(): Promise<{ data: string[] }> {
+    const response = await apiClient.get<{ data: string[] }>('/traces/services')
+    return response.data
+  },
+  async search(params: {
+    service?: string
+    operation?: string
+    limit?: number
+    lookback?: string
+  } = {}): Promise<{ data: JaegerTraceSummary[] }> {
+    const response = await apiClient.get<{ data: JaegerTraceSummary[] }>(
+      '/traces/search',
+      { params },
+    )
+    return response.data
+  },
+  async get(traceId: string): Promise<{ data: JaegerTraceSummary[] }> {
+    const response = await apiClient.get<{ data: JaegerTraceSummary[] }>(
+      `/traces/${traceId}`,
+    )
+    return response.data
+  },
+}
+
+export function buildLogStreamWsUrl(
+  namespace: string,
+  name: string,
+  options: { container?: string; tailLines?: number } = {},
+): string {
+  const proto = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const host = typeof window !== 'undefined' ? window.location.host : 'localhost:3000'
+  const params = new URLSearchParams()
+  if (options.container) params.set('container', options.container)
+  params.set('tail_lines', String(options.tailLines ?? 200))
+  return `${proto}://${host}/api/cluster/pods/${namespace}/${name}/logs/stream?${params.toString()}`
+}
+
+export function buildExecWsUrl(
+  namespace: string,
+  name: string,
+  options: { container?: string; command?: string } = {},
+): string {
+  const proto = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const host = typeof window !== 'undefined' ? window.location.host : 'localhost:3000'
+  const params = new URLSearchParams()
+  if (options.container) params.set('container', options.container)
+  params.set('command', options.command ?? '/bin/sh')
+  return `${proto}://${host}/api/cluster/pods/${namespace}/${name}/exec?${params.toString()}`
 }
 
 export const hardwareApi = {

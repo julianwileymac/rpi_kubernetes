@@ -137,3 +137,67 @@ spec:
     - port: tcp-prometheus
       path: /metrics
       interval: 30s
+
+---
+# KServe controller manager - exposes scheduler/queue metrics on :8080.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kserve-controller-manager
+  namespace: observability
+  labels:
+    app: kserve
+spec:
+  namespaceSelector:
+    matchNames:
+      - kserve
+  selector:
+    matchLabels:
+      control-plane: kserve-controller-manager
+  endpoints:
+    - port: http-metrics
+      path: /metrics
+      interval: 30s
+
+---
+# vLLM CPU profile - exposes the OpenAI-compatible Prometheus endpoint at /metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-cpu-small
+  namespace: observability
+  labels:
+    app: vllm
+spec:
+  namespaceSelector:
+    matchNames:
+      - ml-platform
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-cpu-small
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+
+---
+# vLLM GPU profile - same scrape config, separate target so Grafana panels
+# can split CPU vs GPU latency.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-gpu
+  namespace: observability
+  labels:
+    app: vllm
+spec:
+  namespaceSelector:
+    matchNames:
+      - ml-platform
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-gpu
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

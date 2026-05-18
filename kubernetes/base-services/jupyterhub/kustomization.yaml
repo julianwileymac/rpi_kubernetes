@@ -10,8 +10,11 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
+  - servicemonitor.yaml
 
-commonLabels:
-  app.kubernetes.io/name: jupyterhub
-  app.kubernetes.io/component: development
-  app.kubernetes.io/part-of: rpi-k8s-platform
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: jupyterhub
+      app.kubernetes.io/component: development
+      app.kubernetes.io/part-of: rpi-k8s-platform

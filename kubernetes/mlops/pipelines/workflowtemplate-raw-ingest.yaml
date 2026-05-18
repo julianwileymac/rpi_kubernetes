@@ -22,7 +22,7 @@ spec:
       - name: output_prefix
         value: raw
       - name: target_bucket
-        value: dagster-artifacts
+        value: pipeline-raw
       - name: rest_method
         value: GET
       - name: rest_body_json
@@ -116,3 +116,6 @@ spec:
               secretKeyRef:
                 name: pipeline-sink-credentials
                 key: PIPELINE_MINIO_REGION
+        envFrom:
+          - secretRef:
+              name: pipeline-sink-credentials

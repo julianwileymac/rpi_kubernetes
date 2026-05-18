@@ -7,11 +7,12 @@ Main application entry point.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 
 from .api import api_router
+from .auth import require_authenticated_mgmt
 from .config import get_settings
 from .telemetry import setup_telemetry
 
@@ -28,17 +29,21 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     settings = get_settings()
 
-    # Setup OpenTelemetry
     if settings.telemetry.enabled:
-        setup_telemetry(settings)
+        setup_telemetry(settings, app=app)
         logger.info("OpenTelemetry tracing enabled")
 
     logger.info(f"Starting {settings.cluster_name} Management API")
 
     yield
 
-    # Cleanup
     logger.info("Shutting down Management API")
+    try:
+        from rpi_k8s_sdk.tracing import shutdown_tracing
+
+        shutdown_tracing()
+    except ImportError:
+        pass
 
 
 def create_app() -> FastAPI:
@@ -54,17 +59,27 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # CORS middleware
+    # CORS middleware — credentials enabled only when the origin
+    # allowlist is concrete. Using ``*`` with credentials trips the
+    # browser CORS preflight; keep them mutually exclusive.
+    cors_origins = settings.cors_origins or ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=cors_origins != ["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # Include API routes
-    app.include_router(api_router, prefix="/api")
+    # Include API routes — every route inherits the
+    # ``require_authenticated_mgmt`` dep so the management plane
+    # rejects unauthenticated traffic when ``APP_AUTH_PROVIDER`` is
+    # set. When the env var is unset (``none``) the dep is a no-op.
+    app.include_router(
+        api_router,
+        prefix="/api",
+        dependencies=[Depends(require_authenticated_mgmt)],
+    )
 
     # Mount Prometheus metrics endpoint
     metrics_app = make_asgi_app()

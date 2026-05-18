@@ -3,6 +3,9 @@ kind: Service
 metadata:
   name: jupyterhub
   namespace: development
+  labels:
+    app: jupyterhub
+    app.kubernetes.io/name: jupyterhub
 spec:
   type: ClusterIP
   ports:

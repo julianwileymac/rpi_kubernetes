@@ -1,0 +1,50 @@
+# =============================================================================
+# image-loader Pod
+# =============================================================================
+# Privileged Pod scheduled onto the k3s control plane that mounts the
+# host's containerd socket.  Used by build-management-no-ssh.ps1 (and any
+# other "push image into the cluster without SSH" flow) as the destination
+# for `docker save | kubectl exec -i ... -- ctr images import -`.
+#
+# The Pod sleeps for an hour by default; the pusher script deletes it once
+# imports are done.  Re-applying is safe (idempotent name).
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-loader
+  namespace: kube-system
+  labels:
+    app: image-loader
+    app.kubernetes.io/managed-by: rpi-k8s-platform
+spec:
+  restartPolicy: Never
+  # The control plane is the only amd64 node in the lab cluster, and it
+  # hosts the canonical containerd socket that all management workloads
+  # are scheduled against.
+  nodeSelector:
+    kubernetes.io/arch: amd64
+    node-role.kubernetes.io/control-plane: "true"
+  tolerations:
+    - operator: Exists
+  hostPID: true
+  containers:
+    - name: loader
+      # rancher/k3s ships the `k3s ctr` (== containerd CLI) binary so we
+      # can talk to the host socket without installing anything else.
+      image: rancher/k3s:v1.29.0-k3s1
+      command: ["sleep", "3600"]
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/k3s/containerd
+        - name: workdir
+          mountPath: /workdir
+  volumes:
+    - name: containerd-sock
+      hostPath:
+        path: /run/k3s/containerd
+        type: Directory
+    - name: workdir
+      emptyDir: {}

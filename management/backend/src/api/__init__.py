@@ -11,12 +11,12 @@ from .hardware import router as hardware_router
 from .health import router as health_router
 from .kafka import router as kafka_router
 from .mlflow import router as mlflow_router
+from .observability import router as observability_router
 from .redis_admin import router as redis_admin_router
+from .traces import router as traces_router
 
-# Create main API router
 api_router = APIRouter()
 
-# Include all sub-routers
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(cluster_router, prefix="/cluster", tags=["cluster"])
 api_router.include_router(deployments_router, prefix="/deployments", tags=["deployments"])
@@ -29,5 +29,9 @@ api_router.include_router(redis_admin_router, prefix="/redis", tags=["redis"])
 api_router.include_router(
     alphavantage_router, prefix="/alphavantage", tags=["alphavantage"],
 )
+api_router.include_router(
+    observability_router, prefix="/observability", tags=["observability"],
+)
+api_router.include_router(traces_router, prefix="/traces", tags=["traces"])
 
 __all__ = ["api_router"]

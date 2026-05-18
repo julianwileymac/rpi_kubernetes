@@ -10,7 +10,9 @@ resources:
   - service.yaml
   - ingress.yaml
 
-commonLabels:
-  app.kubernetes.io/name: mlflow
-  app.kubernetes.io/component: ml-tracking
-  app.kubernetes.io/part-of: rpi-k8s-platform
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: mlflow
+      app.kubernetes.io/component: ml-tracking
+      app.kubernetes.io/part-of: rpi-k8s-platform

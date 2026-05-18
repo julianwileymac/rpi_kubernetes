@@ -21,6 +21,8 @@ resources:
   - workflowtemplate-graphrag-build.yaml
   - workflowtemplate-cdc-sync.yaml
   - cronworkflow-cdc-sync-hourly.yaml
+  - workflowtemplate-datahub-ingestion.yaml
+  - cronworkflow-datahub-ingestion-daily.yaml
   - rbac-dagster-argo.yaml
   - alphavantage/
 

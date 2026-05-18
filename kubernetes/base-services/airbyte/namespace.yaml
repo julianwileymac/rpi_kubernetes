@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elt
+  labels:
+    app.kubernetes.io/name: airbyte
+    app.kubernetes.io/component: elt
+    app.kubernetes.io/part-of: rpi-k8s-platform

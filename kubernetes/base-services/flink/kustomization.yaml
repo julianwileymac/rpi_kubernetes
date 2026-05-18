@@ -24,7 +24,9 @@ resources:
   - jobs/scanner-alert-job.yaml
   - jobs/av-enrichment-job.yaml
 
-commonLabels:
-  app.kubernetes.io/name: flink
-  app.kubernetes.io/component: stream-processing
-  app.kubernetes.io/part-of: rpi-k8s-platform
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: flink
+      app.kubernetes.io/component: stream-processing
+      app.kubernetes.io/part-of: rpi-k8s-platform

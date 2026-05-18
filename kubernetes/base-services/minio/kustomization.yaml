@@ -5,13 +5,16 @@ namespace: data-services
 
 resources:
   - secret.yaml
+  - service-credentials.yaml
   - pvc.yaml
   - deployment.yaml
   - service.yaml
   - ingress.yaml
   - bootstrap-buckets-job.yaml
 
-commonLabels:
-  app.kubernetes.io/name: minio
-  app.kubernetes.io/component: storage
-  app.kubernetes.io/part-of: rpi-k8s-platform
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: minio
+      app.kubernetes.io/component: storage
+      app.kubernetes.io/part-of: rpi-k8s-platform

@@ -280,8 +280,24 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="Logging level")
     cors_origins: list[str] = Field(
         default=["*"],
-        description="Allowed CORS origins",
+        description=(
+            "Allowed CORS origins. Defaults to '*' for backwards compat "
+            "with local dev; production deployments should set "
+            "``APP_CORS_ORIGINS=https://...`` to lock down the allowlist."
+        ),
     )
+
+    # --- Phase 8 — Auth0 / Cloudflare Access integration ---
+    # ``none`` (default) keeps the legacy unauthenticated posture.
+    # ``auth0`` validates Bearer JWTs against APP_AUTH_OIDC_ISSUER /
+    # APP_AUTH_OIDC_AUDIENCE. ``cloudflare_access`` trusts the
+    # ``Cf-Access-Authenticated-User-Email`` header injected by the
+    # Cloudflare Tunnel ingress when an Access policy is in place.
+    auth_provider: str = Field(default="none")
+    auth_oidc_issuer: str = Field(default="")
+    auth_oidc_audience: str = Field(default="")
+    auth_oidc_jwks_ttl_seconds: int = Field(default=3600)
+    auth_oidc_leeway_seconds: int = Field(default=60)
 
     # Cluster information
     cluster_name: str = Field(default="rpi-k8s-cluster", description="Cluster name")

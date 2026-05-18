@@ -81,6 +81,26 @@ class PipelineConfig:
         default_factory=lambda: _env("PIPELINE_S3_SECRET_KEY", "minioadmin123")
     )
     source_s3_region: str = field(default_factory=lambda: _env("PIPELINE_S3_REGION", "us-east-1"))
+    datahub_enabled: bool = field(default_factory=lambda: _env_bool("PIPELINE_DATAHUB_ENABLED", "false"))
+    datahub_gms_url: str = field(
+        default_factory=lambda: normalize_endpoint(
+            _env("PIPELINE_DATAHUB_GMS_URL", "datahub-datahub-gms.data-services.svc.cluster.local:8080")
+        )
+    )
+    datahub_token: str = field(default_factory=lambda: _env("PIPELINE_DATAHUB_TOKEN", ""))
+    datahub_env: str = field(default_factory=lambda: _env("PIPELINE_DATAHUB_ENV", "PROD"))
+    iceberg_catalog_uri: str = field(
+        default_factory=lambda: normalize_endpoint(
+            _env(
+                "PIPELINE_ICEBERG_CATALOG_URI",
+                "datahub-datahub-gms.data-services.svc.cluster.local:8080/iceberg",
+            )
+        )
+    )
+    iceberg_warehouse: str = field(
+        default_factory=lambda: _env("PIPELINE_ICEBERG_WAREHOUSE", "s3://iceberg-warehouse/")
+    )
+    model_bucket: str = field(default_factory=lambda: _env("PIPELINE_MODEL_BUCKET", "model-registry"))
 
     @property
     def effective_source_postgres_dsn(self) -> str:

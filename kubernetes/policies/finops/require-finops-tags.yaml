@@ -1,0 +1,90 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-finops-tags
+  labels:
+    app.kubernetes.io/name: kyverno
+    app.kubernetes.io/component: policy
+    app.kubernetes.io/part-of: rpi-k8s-platform
+    project: aqp-default
+    cost_center: quant-research-01
+    owner: system-orchestrator
+    data_classification: proprietary-alpha
+  annotations:
+    policies.kyverno.io/title: Require FinOps Tags
+    policies.kyverno.io/category: FinOps
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod,Deployment,StatefulSet,DaemonSet,Job,CronJob
+    policies.kyverno.io/description: >-
+      Every compute-bearing workload must include project, cost_center, owner,
+      and data_classification labels so cloud and cluster spend can be traced
+      back to a strategy_id or agent_run_id. This complements the AQP
+      before_task_publish FinOps headers and the aqp.tasks.finops_tasks.audit
+      scanner.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  failurePolicy: Fail
+  rules:
+    - name: pods-must-have-finops-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: >-
+          Pods must declare non-empty project, cost_center, owner, and
+          data_classification labels for FinOps cost attribution.
+        pattern:
+          metadata:
+            labels:
+              project: "?*"
+              cost_center: "?*"
+              owner: "?*"
+              data_classification: "?*"
+
+    - name: controllers-must-have-finops-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Job
+      validate:
+        message: >-
+          Workload controllers must stamp non-empty project, cost_center,
+          owner, and data_classification labels on their pod templates.
+        pattern:
+          spec:
+            template:
+              metadata:
+                labels:
+                  project: "?*"
+                  cost_center: "?*"
+                  owner: "?*"
+                  data_classification: "?*"
+
+    - name: cronjobs-must-have-finops-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - CronJob
+      validate:
+        message: >-
+          CronJobs must stamp non-empty project, cost_center, owner, and
+          data_classification labels on their job pod templates.
+        pattern:
+          spec:
+            jobTemplate:
+              spec:
+                template:
+                  metadata:
+                    labels:
+                      project: "?*"
+                      cost_center: "?*"
+                      owner: "?*"
+                      data_classification: "?*"

@@ -28,7 +28,9 @@ resources:
   - mirrormaker2.yaml
   - rebalance.yaml
 
-commonLabels:
-  app.kubernetes.io/name: kafka
-  app.kubernetes.io/component: message-broker
-  app.kubernetes.io/part-of: rpi-k8s-platform
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: kafka
+      app.kubernetes.io/component: message-broker
+      app.kubernetes.io/part-of: rpi-k8s-platform

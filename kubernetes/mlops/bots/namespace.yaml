@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aqp-bots
+  labels:
+    app.kubernetes.io/managed-by: aqp
+    aqp.io/component: bots
+  annotations:
+    aqp.io/notes: >-
+      Default namespace for AQP bot Deployments + ConfigMaps applied by
+      ``aqp.bots.deploy.KubernetesTarget`` and the
+      ``aqp-bot-deploy`` Argo WorkflowTemplate.

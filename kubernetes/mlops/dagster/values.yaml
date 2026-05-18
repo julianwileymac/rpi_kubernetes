@@ -5,7 +5,16 @@
 #   helm repo add dagster https://dagster-io.github.io/helm
 #   helm repo update
 #   helm upgrade --install dagster dagster/dagster \
-#     --namespace mlops --create-namespace -f values.yaml
+#     --namespace mlops --create-namespace \
+#     -f values.yaml \
+#     -f values-pipelines-user-code.yaml   # when ready to ship in-repo user code
+#
+# Production hardening notes (see README.md):
+#   1. User-code images are pulled from `pipeline-sink-credentials` secret
+#      keys; rotate that secret to rotate MinIO/Postgres credentials.
+#   2. The Dagster daemon is enabled by default so schedules + sensors run.
+#   3. AWS credentials are sourced from the dagster-minio Secret instead of
+#      being inlined in environment variables.
 # =============================================================================
 
 fullnameOverride: dagster
@@ -37,15 +46,21 @@ dagsterWebserver:
       value: "otlp"
     - name: OTEL_LOGS_EXPORTER
       value: "otlp"
-    - name: AWS_ACCESS_KEY_ID
-      value: "minioadmin"
-    - name: AWS_SECRET_ACCESS_KEY
-      value: "minioadmin123"
+
+  # Source MinIO credentials from the dagster-minio Secret (managed by
+  # secret.yaml in this directory) so they can be rotated without editing
+  # the Helm values.
+  envSecrets:
+    - name: dagster-minio
+  envFrom:
+    - secretRef:
+        name: dagster-minio
 
 dagsterDaemon:
-  # Baseline mode keeps Dagster UI reachable without schedule/sensor processing.
-  # Enable in values-pipelines-user-code.yaml once a valid code location is configured.
-  enabled: false
+  # Enabled so schedules + sensors actually run.  Was previously disabled as
+  # a baseline; the in-repo user-code deployment is healthy enough now to
+  # keep the daemon online.
+  enabled: true
 
   resources:
     requests:
@@ -64,13 +79,15 @@ dagsterDaemon:
       value: "otlp"
     - name: OTEL_LOGS_EXPORTER
       value: "otlp"
-    - name: AWS_ACCESS_KEY_ID
-      value: "minioadmin"
-    - name: AWS_SECRET_ACCESS_KEY
-      value: "minioadmin123"
+
+  envSecrets:
+    - name: dagster-minio
+  envFrom:
+    - secretRef:
+        name: dagster-minio
 
 # Baseline install keeps a lightweight example code location so Dagster starts
-# with a valid workspace. In-repo pipeline user code is enabled via
+# with a valid workspace.  In-repo pipeline user code is enabled via
 # values-pipelines-user-code.yaml.
 dagster-user-deployments:
   enabled: true
@@ -79,6 +96,8 @@ dagster-user-deployments:
     - name: bootstrap-user-code
       image:
         repository: docker.io/dagster/dagster-celery-k8s
+        # Pinned to an immutable tag (was previously a moving label).  Update
+        # this when promoting a new user-code image; do not use `:latest`.
         tag: "1.12.21"
         pullPolicy: IfNotPresent
       dagsterApiGrpcArgs:
@@ -87,6 +106,14 @@ dagster-user-deployments:
       port: 3030
       includeConfigInLaunchedRuns:
         enabled: true
+      envSecrets:
+        - name: dagster-minio
+        - name: pipeline-sink-credentials
+      env:
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.observability.svc.cluster.local:4317
+        - name: OTEL_SERVICE_NAME
+          value: dagster-user-code
       volumes:
         - name: bootstrap-user-code
           configMap:
@@ -105,12 +132,16 @@ runLauncher:
     k8sRunLauncher:
       jobNamespace: mlops
       loadInclusterConfig: true
+      # Pipeline runs receive credentials via the existing pipeline-sink-credentials
+      # secret (managed by kubernetes/mlops/pipelines/) so we do not have to
+      # duplicate them here.
+      envSecrets:
+        - name: pipeline-sink-credentials
+        - name: dagster-minio
       envVars:
         - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4317
         - OTEL_TRACES_EXPORTER=otlp
         - OTEL_LOGS_EXPORTER=otlp
-        - AWS_ACCESS_KEY_ID=minioadmin
-        - AWS_SECRET_ACCESS_KEY=minioadmin123
 
 # Use existing cluster PostgreSQL instead of the chart subchart.
 postgresql:
@@ -122,7 +153,8 @@ postgresql:
   service:
     port: 5432
 
-# Persist Dagster compute logs in MinIO (S3-compatible).
+# Persist Dagster compute logs in MinIO (S3-compatible).  Credentials come
+# from the AWS_* keys provisioned by the dagster-minio Secret above.
 computeLogManager:
   type: S3ComputeLogManager
   config:
