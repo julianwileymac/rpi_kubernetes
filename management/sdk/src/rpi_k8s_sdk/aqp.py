@@ -14,14 +14,33 @@ a trained model with MLflow + KServe in one or two lines:
 The session context configures tracing, brings up the necessary tunnels,
 and exports the right env vars so AQP's own clients (MLflow, MinIO,
 Iceberg) can reach the cluster.
+
+Phase 7 (refactor) extension
+----------------------------
+
+The new :class:`AqpControlPlaneClient` is the canonical typed client to
+``aqp_control_plane`` — the isolated AQP control-plane micro-project
+introduced by the refactor (ADR 005). It speaks the
+``/manage/*`` REST surface (deployments / config / telemetry / health)
+and forwards an Auth0 bearer token when one is configured.
+
+The existing :func:`aqp_session`, :func:`submit_backtest`, and
+:func:`register_model` helpers remain as thin wrappers around the
+in-cluster platform services (MLflow / Argo / KServe). New code that
+wants to manage AQP workloads should reach for
+:class:`AqpControlPlaneClient` instead of the deprecated
+``management/backend`` HTTP API in this repo.
 """
 
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import logging
 import os
 from typing import Any, Iterator
+
+import httpx
 
 from .access import LocalAccessSettings, load_settings
 from .mlflow import MLflowClient
@@ -31,6 +50,222 @@ from .tracing import configure_tracing
 from .tunnels import LocalTunnelManager
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# AqpControlPlaneClient — Phase 7 addition
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AqpControlPlaneSettings:
+    """Connection settings for ``aqp_control_plane`` HTTP API.
+
+    The defaults match the docker-compose stack
+    (``http://localhost:9000``); override via env vars in production.
+    """
+
+    base_url: str = "http://localhost:9000"
+    bearer_token: str = ""
+    timeout_seconds: float = 30.0
+    request_id_prefix: str = "rpi-k8s-sdk"
+
+    @classmethod
+    def from_env(cls) -> AqpControlPlaneSettings:
+        return cls(
+            base_url=os.environ.get(
+                "AQP_CONTROL_PLANE_URL", "http://localhost:9000"
+            ).rstrip("/"),
+            bearer_token=os.environ.get("AQP_CONTROL_PLANE_TOKEN", ""),
+            timeout_seconds=float(
+                os.environ.get("AQP_CONTROL_PLANE_TIMEOUT_SECONDS", "30")
+            ),
+        )
+
+
+class AqpControlPlaneClient:
+    """Typed HTTP client for the AQP control plane (``/manage/*``).
+
+    Usage::
+
+        from rpi_k8s_sdk.aqp import AqpControlPlaneClient
+
+        with AqpControlPlaneClient.from_env() as client:
+            status = client.list_deployments()
+            client.scale_deployment("aqp-worker", 4)
+
+    Every mutating call returns the ``ResponseEnvelope`` shape
+    (``{"status": "ok", "data": ..., "error": null}``) emitted by the
+    control plane. The client auto-attaches the bearer token (when
+    configured) and a per-request ``X-Request-Id``.
+    """
+
+    def __init__(self, settings: AqpControlPlaneSettings | None = None) -> None:
+        self.settings = settings or AqpControlPlaneSettings.from_env()
+        self._http = httpx.Client(
+            base_url=self.settings.base_url,
+            timeout=self.settings.timeout_seconds,
+            headers=self._default_headers(),
+        )
+
+    def _default_headers(self) -> dict[str, str]:
+        headers = {"Accept": "application/json"}
+        if self.settings.bearer_token:
+            headers["Authorization"] = f"Bearer {self.settings.bearer_token}"
+        return headers
+
+    def _request_id(self) -> str:
+        import secrets
+
+        return f"{self.settings.request_id_prefix}-{secrets.token_hex(8)}"
+
+    def _envelope(self, response: httpx.Response) -> dict[str, Any]:
+        if response.status_code >= 400:
+            try:
+                body = response.json()
+            except ValueError:
+                body = {"detail": response.text}
+            raise AqpControlPlaneError(
+                f"AQP control plane returned {response.status_code}",
+                status_code=response.status_code,
+                body=body,
+            )
+        return response.json()
+
+    # ---- health -----------------------------------------------------
+
+    def health(self) -> dict[str, Any]:
+        """Return ``/manage/health`` payload (unauthenticated endpoint)."""
+        return self._envelope(self._http.get("/manage/health"))
+
+    # ---- deployments -----------------------------------------------
+
+    def list_deployments(self, *, namespace: str | None = None) -> dict[str, Any]:
+        params = {"namespace": namespace} if namespace else None
+        return self._envelope(self._http.get("/manage/deployments", params=params))
+
+    def get_deployment(
+        self, service_id: str, *, namespace: str | None = None
+    ) -> dict[str, Any]:
+        params = {"namespace": namespace} if namespace else None
+        return self._envelope(
+            self._http.get(f"/manage/deployments/{service_id}", params=params)
+        )
+
+    def start_deployment(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Start/update a deployment.
+
+        ``spec`` must follow the ``DeploymentSpec`` shape — at minimum
+        ``service_id`` + ``image``. Reference:
+        :class:`aqp_platform_core.models.DeploymentSpec`.
+        """
+        service_id = spec.get("service_id")
+        if not service_id:
+            raise ValueError("spec missing 'service_id'")
+        return self._envelope(
+            self._http.post(
+                f"/manage/deployments/{service_id}/start",
+                json=spec,
+                headers={"X-Request-Id": self._request_id()},
+            )
+        )
+
+    def stop_deployment(
+        self, service_id: str, *, namespace: str | None = None
+    ) -> dict[str, Any]:
+        params = {"namespace": namespace} if namespace else None
+        return self._envelope(
+            self._http.post(
+                f"/manage/deployments/{service_id}/stop",
+                params=params,
+                headers={"X-Request-Id": self._request_id()},
+            )
+        )
+
+    def scale_deployment(
+        self,
+        service_id: str,
+        replicas: int,
+        *,
+        namespace: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {"replicas": int(replicas)}
+        if namespace:
+            params["namespace"] = namespace
+        return self._envelope(
+            self._http.patch(
+                f"/manage/deployments/{service_id}/scale",
+                params=params,
+                headers={"X-Request-Id": self._request_id()},
+            )
+        )
+
+    def delete_deployment(
+        self, service_id: str, *, namespace: str | None = None
+    ) -> dict[str, Any]:
+        params = {"namespace": namespace} if namespace else None
+        return self._envelope(
+            self._http.delete(
+                f"/manage/deployments/{service_id}",
+                params=params,
+                headers={"X-Request-Id": self._request_id()},
+            )
+        )
+
+    # ---- config / telemetry ----------------------------------------
+
+    def get_config(
+        self, service_id: str, *, namespace: str | None = None
+    ) -> dict[str, Any]:
+        params = {"namespace": namespace} if namespace else None
+        return self._envelope(
+            self._http.get(f"/manage/config/{service_id}", params=params)
+        )
+
+    def patch_config(self, patch: dict[str, Any]) -> dict[str, Any]:
+        service_id = patch.get("service_id")
+        if not service_id:
+            raise ValueError("patch missing 'service_id'")
+        return self._envelope(
+            self._http.patch(
+                f"/manage/config/{service_id}",
+                json=patch,
+                headers={"X-Request-Id": self._request_id()},
+            )
+        )
+
+    def telemetry_snapshot(self) -> dict[str, Any]:
+        return self._envelope(self._http.get("/manage/telemetry/snapshot"))
+
+    # ---- lifecycle --------------------------------------------------
+
+    def close(self) -> None:
+        self._http.close()
+
+    def __enter__(self) -> AqpControlPlaneClient:
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.close()
+
+    @classmethod
+    def from_env(cls) -> AqpControlPlaneClient:
+        return cls(AqpControlPlaneSettings.from_env())
+
+
+class AqpControlPlaneError(RuntimeError):
+    """Raised when the AQP control plane returns a 4xx/5xx response."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int,
+        body: dict[str, Any],
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body
 
 
 @contextlib.contextmanager
@@ -164,3 +399,14 @@ def latest_mlflow_run(experiment_name: str, *, settings: LocalAccessSettings | N
     if not runs:
         return None
     return runs[0].run_id
+
+
+__all__ = [
+    "AqpControlPlaneClient",
+    "AqpControlPlaneError",
+    "AqpControlPlaneSettings",
+    "aqp_session",
+    "latest_mlflow_run",
+    "register_model",
+    "submit_backtest",
+]

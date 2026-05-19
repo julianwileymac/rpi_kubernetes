@@ -1,3 +1,7 @@
+> Archive notice: incident-specific workaround retained for historical context.
+> Do not treat this as canonical setup guidance. See `docs/archive/README.md`
+> and `docs/index.md`.
+
 # Grafana Port 3000 Conflict - Manual Fix Guide
 
 **Issue:** Grafana cannot run on port 3000 because gpt-research is using it on the control plane.

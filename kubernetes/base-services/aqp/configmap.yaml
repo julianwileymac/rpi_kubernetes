@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aqp-config
+  namespace: aqp
+  labels:
+    app.kubernetes.io/part-of: aqp
+data:
+  # Connectivity matrix (read by aqp_platform_core.connectivity).
+  # Override per environment in agentic_quant_platform/deployments/kubernetes/overlays/.
+  AQP_ENV: rpi
+  AQP_LOG_LEVEL: INFO
+  AQP_AUTH_ENFORCE: strict
+  AQP_CORE_API_URL: http://aqp-core.aqp.svc.cluster.local:8000
+  AQP_ML_API_URL: http://aqp-ml.aqp.svc.cluster.local:8001
+  AQP_MCP_URL: http://aqp-mcp.aqp.svc.cluster.local:8002
+  AQP_REDIS_URL: redis://redis-master.aqp.svc.cluster.local:6379
+  AQP_CONTROL_PLANE_URL: http://aqp-cp.aqp-admin.svc.cluster.local
+  AQP_KUBERNETES_ADAPTER: in_cluster
+  AQP_AUTH_PROVIDER: auth0
+  AQP_AUTH_CLAIMS_NAMESPACE: "https://aqp.internal/"
+  # Auth0 issuer + audience populated by Terraform from the live tenant.
+  AQP_AUTH_OIDC_ISSUER: ""
+  AQP_AUTH_OIDC_AUDIENCE: "https://api.aqp.internal/manage"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aqp-secrets
+  namespace: aqp
+  labels:
+    app.kubernetes.io/part-of: aqp
+type: Opaque
+data:
+  # ALL VALUES BELOW ARE PLACEHOLDERS — CI/CD or a SealedSecret /
+  # external-secrets-operator MUST patch these with real values.
+  # Y2hhbmdlbWU= is base64("changeme").
+  AQP_DATABASE_PASSWORD: Y2hhbmdlbWU=
+  AQP_AUTH_M2M_CLIENT_SECRET: Y2hhbmdlbWU=
+  AQP_AUTH_SCIM_BEARER_TOKEN_HASH: Y2hhbmdlbWU=
+  AQP_SESSION_COOKIE_SECRET: Y2hhbmdlbWU=

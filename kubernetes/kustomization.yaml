@@ -48,6 +48,12 @@ resources:
   - base-services/datahub/
   - base-services/airbyte/
 
+  # AQP application namespace + config bootstrap (Phase 7 absorption).
+  # The actual aqp-client/core/worker/cp Deployments live in
+  # agentic_quant_platform/deployments/kubernetes/ and reference the
+  # ConfigMap + Secret created here.
+  - base-services/aqp/
+
   # Streaming platform
   - base-services/kafka/
   - base-services/schema-registry/

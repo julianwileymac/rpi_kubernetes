@@ -2,6 +2,12 @@
 
 This guide covers how to extend the RPi Kubernetes cluster framework with custom services, integrations, and plugins.
 
+> Migration note: this document still contains legacy examples under
+> `management/backend` and `management/frontend`. Those paths are deprecated.
+> New operator API/UI work belongs in `agentic_quant_platform`
+> (`aqp_control_plane` + `frontend`), then integrates here via Kubernetes
+> manifests and shared services.
+
 ## Caching, vector search, and agent memory (Redis 8 Stack)
 
 The framework ships a shared Redis 8 Stack deployment used by the
@@ -143,7 +149,10 @@ helm install my-service my-chart/my-service \
   -f kubernetes/base-services/my-service/values.yaml
 ```
 
-## Extending the Management API
+## Extending the Management API (legacy path)
+
+Use this section only for rollback maintenance on deprecated management
+surfaces.
 
 ### Adding a New Service Module
 
@@ -224,7 +233,10 @@ api_router.include_router(
 )
 ```
 
-## Adding Frontend Components
+## Adding Frontend Components (legacy path)
+
+Use this section only for rollback maintenance on deprecated management
+surfaces.
 
 ### Creating a New Dashboard Page
 

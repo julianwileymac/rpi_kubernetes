@@ -2,6 +2,10 @@
 
 This guide walks you through setting up your Raspberry Pi Kubernetes cluster from scratch.
 
+> Canonical docs map: [index.md](index.md)  
+> AQP deployment handoff runbook: [operations/kubernetes-deploy.md](operations/kubernetes-deploy.md)  
+> `management/backend` + `management/frontend` are deprecated migration surfaces.
+
 ## Prerequisites
 
 ### Hardware Requirements
@@ -312,10 +316,11 @@ rpi4           Ready    <none>                 4m    v1.29.0+k3s1
 
 ## Step 8: Deploy Base Services
 
-### 7.1 Deploy Core Services
+### 8.1 Deploy Core Services
 
 ```bash
-# Deploy namespaces and base services
+# Deploy namespaces and base services.
+# Run this only after Step 7 installs required Helm operators/CRDs.
 kubectl apply -k kubernetes/
 ```
 
@@ -323,10 +328,10 @@ This applies MinIO and a bucket bootstrap Job that creates:
 `mlflow-artifacts`, `argo-workflows`, `bentoml-artifacts`, `dagster-artifacts`,
 `milvus-bucket`, and `loki-data`.
 
-If Argo CRDs are not installed yet, apply the MLOps Helm releases in Step 7.3 first,
-then re-run `kubectl apply -k kubernetes/` (or specifically `kubernetes/mlops/pipelines/`).
+If Argo CRDs are not installed yet, complete Step 8.3 first, then re-run this
+command (or apply `kubernetes/mlops/pipelines/` specifically).
 
-### 7.2 Deploy Observability Stack
+### 8.2 Deploy Observability Stack
 
 ```bash
 # Add Helm repos
@@ -353,7 +358,7 @@ helm upgrade --install loki grafana/loki \
   -f kubernetes/observability/loki/values.yaml
 ```
 
-### 7.2.1 Verify Ingress and Telemetry Prerequisites
+### 8.2.1 Verify Ingress and Telemetry Prerequisites
 
 ```bash
 # Ensure ingress controller exists for *.local hosts
@@ -369,7 +374,7 @@ kubectl -n observability get ds otel-collector
 kubectl -n observability get statefulset,deploy | grep loki
 ```
 
-### 7.3 Deploy MLOps Services
+### 8.3 Deploy MLOps Services
 
 ```bash
 # Add Helm repos
@@ -459,7 +464,7 @@ helm upgrade --install yatai bentoml/yatai \
   --set yatai.minio.external.bucket="$(kubectl get secret -n ml-platform yatai-minio -o jsonpath='{.data.bucket}' | base64 -d)"
 ```
 
-### 7.4 Deploy Streaming Platform (Flink + Kafka + Apicurio)
+### 8.4 Deploy Streaming Platform (Flink + Kafka + Apicurio)
 
 The install script provisions the full Strimzi footprint: Kafka cluster,
 topics, users (SCRAM-SHA-512 + ACLs), Kafka Connect, Kafka Bridge,
@@ -676,7 +681,7 @@ Control panel access options:
 
 ```bash
 # Apply management API/UI manifests
-# (UI uses public nginx image + in-cluster static control panel config)
+# (legacy surface only; new control-plane/client lives in agentic_quant_platform)
 kubectl apply -f kubernetes/base-services/management/frontend.yaml
 
 # If you previously deployed legacy selector labels and apply fails,
@@ -687,6 +692,10 @@ kubectl apply -f kubernetes/base-services/management/frontend.yaml
 # Verify rollout
 kubectl rollout status deployment/management-ui -n management --timeout=180s
 ```
+
+This step is retained for rollback compatibility. For current AQP operator
+surfaces, deploy `aqp-client` + `aqp-cp` via
+[operations/kubernetes-deploy.md](operations/kubernetes-deploy.md).
 
 ## Troubleshooting
 

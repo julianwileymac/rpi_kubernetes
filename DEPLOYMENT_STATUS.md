@@ -1,3 +1,7 @@
+> Archive notice: this is a point-in-time status snapshot, not a canonical
+> setup/runbook. Use `README.md`, `docs/index.md`, and `docs/setup-guide.md`
+> for current guidance. Archive policy: `docs/archive/README.md`.
+
 # Cluster Deployment Status
 
 **Date:** February 2, 2026  

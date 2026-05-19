@@ -2,6 +2,13 @@
 
 A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu desktop as hybrid control plane, featuring a comprehensive management framework and pre-configured base services.
 
+> **Docs entrypoint**: [docs/index.md](docs/index.md)  
+> **Migration status**: `management/backend` and `management/frontend` are
+> deprecated in favor of AQP control-plane/client surfaces hosted in
+> `agentic_quant_platform`. Use
+> [docs/operations/kubernetes-deploy.md](docs/operations/kubernetes-deploy.md)
+> for the current integration path.
+
 ## Architecture
 
 ```
@@ -189,7 +196,8 @@ kubectl get nodes
 ### Step 7: Deploy Base Services
 
 ```bash
-# Deploy all base services via Kustomize
+# Deploy cluster manifests via Kustomize
+# (run only after operator/CRD prerequisites from docs/setup-guide.md)
 kubectl apply -k kubernetes/
 
 # Wait for services to be ready
@@ -201,8 +209,9 @@ kubectl wait --for=condition=available --timeout=300s deployment/minio -n data-s
 ./bootstrap/scripts/verify-minio.sh
 ```
 
-> Note: `kubectl apply -k kubernetes/` deploys core services plus OTel/Jaeger/VictoriaMetrics.
-> Prometheus/Grafana, Loki, Milvus, Argo Workflows, Dagster, and BentoML are installed separately via Helm values in this repo (see [docs/setup-guide.md](docs/setup-guide.md)).
+> Note: on a fresh cluster, first follow the ordered install flow in
+> [docs/setup-guide.md](docs/setup-guide.md) so CRDs/operators exist before
+> applying the full root kustomization.
 
 ### Step 8: Access Services
 

@@ -1,0 +1,31 @@
+---
+description: Always-on governance for rpi_kubernetes docs and migration boundaries.
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# rpi_kubernetes governance (always on)
+
+Use this repository for cluster bootstrap, Kubernetes platform services, and
+infrastructure operations.
+
+## Canonical docs
+
+- `README.md`
+- `docs/index.md`
+- `docs/setup-guide.md`
+- `docs/operations/kubernetes-deploy.md`
+- `AGENTS.md`
+
+## Hard boundaries
+
+1. `management/backend` and `management/frontend` are deprecated surfaces.
+   Do not add new feature work there.
+2. New AQP control-plane and operator UI features belong in
+   `agentic_quant_platform`.
+3. Do not document `kubectl apply -k kubernetes/` as universally sufficient
+   when CRD/operator install order is required.
+4. Incident-specific notes belong under `docs/archive/`, not as canonical
+   top-level docs.
+5. Keep path references real and current; remove links to missing files.

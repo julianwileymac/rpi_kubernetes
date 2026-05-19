@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aqp
+  labels:
+    app.kubernetes.io/name: aqp
+    app.kubernetes.io/part-of: aqp
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    # Pod Security Standards "restricted" — matches the AQP deployment
+    # overlay at agentic_quant_platform/deployments/kubernetes/.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+  annotations:
+    aqp.internal/description: "AQP application namespace — workloads from agentic_quant_platform/deployments/kubernetes/ land here."
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aqp-admin
+  labels:
+    app.kubernetes.io/name: aqp-admin
+    app.kubernetes.io/part-of: aqp
+    app.kubernetes.io/managed-by: rpi-k8s-cluster
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+  annotations:
+    aqp.internal/description: "Isolated control-plane namespace (ADR 005) — aqp_control_plane lands here."

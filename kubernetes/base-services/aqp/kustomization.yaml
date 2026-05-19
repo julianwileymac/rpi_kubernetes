@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+
+# The actual aqp-client / aqp-core / aqp-worker / aqp-cp Deployments
+# live in agentic_quant_platform/deployments/kubernetes/. They reference
+# the aqp-config ConfigMap + aqp-secrets Secret created here.
+#
+# Apply order (operator runbook — see docs/operations/kubernetes-deploy.md):
+#   1. kubectl apply -k kubernetes/base-services/aqp/        (this dir)
+#   2. cd ../agentic_quant_platform
+#      kubectl apply -k deployments/kubernetes/overlays/dev   (workloads)
