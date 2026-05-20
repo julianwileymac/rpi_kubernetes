@@ -19,6 +19,8 @@ Canonical documentation entry point for this repository.
 | [operations/kubernetes-deploy.md](operations/kubernetes-deploy.md) | migration | AQP integration rollout path for this cluster |
 | [management-api.md](management-api.md) | migration | Legacy management API reference while migration completes |
 | [extending-framework.md](extending-framework.md) | migration | Extension patterns with active/deprecated boundaries |
+| [code-index.md](code-index.md) | active | Agent-readable code ownership and search boundaries |
+| [aqp-monorepo-paths.md](aqp-monorepo-paths.md) | active | AQP path contract used by this repo |
 
 ## Domain docs
 
@@ -32,6 +34,17 @@ Canonical documentation entry point for this repository.
 
 - [../management/backend/DEPRECATED.md](../management/backend/DEPRECATED.md)
 - [../management/frontend/DEPRECATED.md](../management/frontend/DEPRECATED.md)
+- [../kubernetes/legacy-management/kustomization.yaml](../kubernetes/legacy-management/kustomization.yaml)
+
+## Agent Governance
+
+| Artifact | Purpose |
+| --- | --- |
+| [../AGENTS.md](../AGENTS.md) | Root repository boundaries |
+| [../kubernetes/AGENTS.md](../kubernetes/AGENTS.md) | Manifest ownership rules |
+| [../management/AGENTS.md](../management/AGENTS.md) | SDK and deprecated management guidance |
+| [../.cursor/rules/](../.cursor/rules/) | Cursor-scoped rules |
+| [../.cursor/skills/rpi-k8s-governance/SKILL.md](../.cursor/skills/rpi-k8s-governance/SKILL.md) | Repeatable setup/index governance workflow |
 
 ## Archive guidance
 
@@ -49,4 +62,7 @@ kubectl apply -k kubernetes/
 
 # Apply AQP integration prerequisites from this repo
 kubectl apply -k kubernetes/base-services/aqp/
+
+# Rollback only: apply deprecated management console explicitly
+kubectl apply -k kubernetes/legacy-management/
 ```

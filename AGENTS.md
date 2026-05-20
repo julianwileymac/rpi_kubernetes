@@ -11,7 +11,7 @@ This repository owns:
 - Streaming and data-service templates/samples.
 
 This repository does **not** own new AQP control-plane or operator-frontend
-features. Those live in `agentic_quant_platform`.
+features. Those live in `agentic_quant_platform` (see `docs/aqp-monorepo-paths.md`).
 
 ## Canonical docs
 
@@ -19,6 +19,9 @@ features. Those live in `agentic_quant_platform`.
 - [docs/index.md](docs/index.md)
 - [docs/setup-guide.md](docs/setup-guide.md)
 - [docs/operations/kubernetes-deploy.md](docs/operations/kubernetes-deploy.md)
+- [docs/code-index.md](docs/code-index.md)
+- [kubernetes/AGENTS.md](kubernetes/AGENTS.md)
+- [management/AGENTS.md](management/AGENTS.md)
 
 ## Hard boundaries
 
@@ -26,11 +29,16 @@ features. Those live in `agentic_quant_platform`.
    new features there; only rollback maintenance.
 2. AQP application workload deployment instructions must point to
    `agentic_quant_platform/deployments/kubernetes`.
-3. Keep Kubernetes apply order explicit when CRDs/operators are prerequisites.
+3. AQP workload controllers belong in
+   `agentic_quant_platform/aqp_control_plane`, not this repo.
+4. Default cluster bootstrap must not deploy
+   `kubernetes/base-services/management`; use
+   `kubernetes/legacy-management` only for rollback.
+5. Keep Kubernetes apply order explicit when CRDs/operators are prerequisites.
    Do not present `kubectl apply -k kubernetes/` as universally sufficient.
-4. New top-level incident or point-in-time docs belong under `docs/archive/`
+6. New top-level incident or point-in-time docs belong under `docs/archive/`
    with date/context labels, not as canonical root docs.
-5. Keep docs path-accurate: do not reference missing runbooks or manifests.
+7. Keep docs path-accurate: do not reference missing runbooks or manifests.
 
 ## Editing guidance
 

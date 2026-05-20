@@ -1,11 +1,11 @@
 # Raspberry Pi Kubernetes Cluster
 
-A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu desktop as hybrid control plane, featuring a comprehensive management framework and pre-configured base services.
+A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu desktop as hybrid control plane, featuring reproducible cluster bootstrap, shared platform services, and rollback-only legacy management surfaces.
 
 > **Docs entrypoint**: [docs/index.md](docs/index.md)  
-> **Migration status**: `management/backend` and `management/frontend` are
-> deprecated in favor of AQP control-plane/client surfaces hosted in
-> `agentic_quant_platform`. Use
+> **Migration status**: `management/backend`, `management/frontend`, and
+> `kubernetes/base-services/management` are deprecated in favor of AQP
+> control-plane/client surfaces hosted in `agentic_quant_platform` (see `docs/aqp-monorepo-paths.md`). Use
 > [docs/operations/kubernetes-deploy.md](docs/operations/kubernetes-deploy.md)
 > for the current integration path.
 
@@ -40,9 +40,9 @@ A production-ready 4-node Raspberry Pi 5 Kubernetes (k3s) cluster with Ubuntu de
 - **Full Strimzi footprint** - Kafka + Topics + Users (SCRAM/ACLs) + Connect + Bridge + MirrorMaker 2 + Apicurio Schema Registry
 - **Flink TA-Lib catalog** - Java Flink jobs covering all ~158 TA-Lib indicators + ~61 candlestick patterns (`flink-jobs-java/`)
 - **Client templates + samples** - Python and Java producer/consumer scaffolds, IBKR/Alpaca/Polygon/yfinance/synthetic producer samples (`templates/`, `samples/`)
-- **Python SDK** - `rpi_k8s_sdk` exposes Avro producers/consumers + Apicurio client + Flink control-plane client (`management/sdk/`)
+- **Python SDK** - `rpi_k8s_sdk` exposes Avro producers/consumers, Apicurio client, Flink helpers, local access utilities, and the AQP control-plane bridge (`AqpControlPlaneClient`)
 - **Pipelines framework** - Caching, vector store, agent memory, Redis OM models, and semantic LLM cache via `pipelines.redis_*` modules
-- **Management Framework** - Python FastAPI backend (`/kafka`, `/flink`, `/documents`, `/redis`) + Next.js control panel
+- **Legacy Management Framework** - Deprecated FastAPI backend and Next.js control panel, now opt-in via `kubernetes/legacy-management/` for rollback only
 - **OpenTelemetry** - Native tracing on brokers, Connect, Bridge, Flink, Redis, and every client template
 - **Ansible Automation** - Reproducible cluster provisioning
 - **mDNS Discovery** - Automatic node discovery without static IPs (Avahi/Bonjour)
@@ -145,7 +145,7 @@ python bootstrap/scripts/bootstrap_cluster.py --discover --bootstrap-only
 
 # Verify with diagnostics (using mDNS hostnames)
 .\bootstrap\scripts\diagnose-cluster.ps1 `
-    -ControlPlane "julia@k8s-control.local" `
+    -ControlPlane "julian@k8s-control.local" `
     -Workers @("julian@rpi1.local","julian@rpi2.local","julian@rpi3.local","julian@rpi4.local")
 ```
 
@@ -181,7 +181,7 @@ ansible-playbook -i ansible/inventory/cluster.yml ansible/playbooks/k3s-install.
 
 ```bash
 # Get kubeconfig from control plane (using mDNS hostname)
-scp julia@k8s-control.local:~/.kube/config ~/.kube/config-rpi-cluster
+scp julian@k8s-control.local:~/.kube/config ~/.kube/config-rpi-cluster
 
 # Or if bootstrap_cluster.py was used, kubeconfig is already saved locally
 # The kubeconfig uses k8s-control.local for resilience to IP changes
@@ -200,12 +200,10 @@ kubectl get nodes
 # (run only after operator/CRD prerequisites from docs/setup-guide.md)
 kubectl apply -k kubernetes/
 
-# Wait for services to be ready
-kubectl wait --for=condition=available --timeout=300s deployment/management-ui -n management
+# Wait for active base services to be ready
 kubectl wait --for=condition=available --timeout=300s deployment/minio -n data-services
 
 # Verify services are accessible
-./bootstrap/scripts/verify-control-panel.sh
 ./bootstrap/scripts/verify-minio.sh
 ```
 
@@ -219,7 +217,7 @@ Add these entries to your workstation's hosts file (`/etc/hosts` or `C:\Windows\
 using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-nginx-controller`):
 
 ```
-192.168.1.200  jupyter.local mlflow.local grafana.local minio.local control.local \
+192.168.1.200  jupyter.local mlflow.local grafana.local minio.local \
                prometheus.local vm.local loki.local jaeger.local argo.local \
                dagster.local chromadb.local milvus.local yatai.local datahub.local \
                flink.local schema-registry.local kafka-bridge.local
@@ -245,12 +243,13 @@ using the ingress-nginx LoadBalancer IP (`kubectl -n ingress get svc ingress-ngi
 | Kafka Bridge (HTTP) | http://kafka-bridge.local | - |
 | Schema Registry | http://schema-registry.local | - |
 | MinIO Console | http://minio.local:9001 | minioadmin / minioadmin123 |
-| Control Panel | http://control.local | - |
 
-Control panel access options:
-- Ingress: `http://control.local` (hosts entry required)
-- LoadBalancer: `http://<management-ui-external-ip>:9280`
-- NodePort: `http://<node-ip>:31280`
+Legacy control panel access is rollback-only. To deploy it explicitly:
+
+```bash
+kubectl apply -k kubernetes/legacy-management/
+./bootstrap/scripts/verify-control-panel.sh
+```
 
 ### Reimaging a Node
 
@@ -442,8 +441,11 @@ sudo systemctl start mount-external-drive.service
 sudo journalctl -u mount-external-drive.service -n 50
 ```
 
-**Control Panel not accessible:**
+**Legacy control panel not accessible (rollback-only):**
 ```bash
+# Deploy rollback-only management first
+kubectl apply -k kubernetes/legacy-management/
+
 # Verify control panel deployment and accessibility
 ./bootstrap/scripts/verify-control-panel.sh
 

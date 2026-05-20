@@ -7,9 +7,10 @@ Python workload.
 The SDK wraps:
 
 1. Strimzi-backed Kafka (produce/consume with Avro + Apicurio Schema Registry).
-2. Kafka Bridge HTTP API (via the management backend proxy).
-3. The management FastAPI endpoints under `/kafka` and `/flink` for granular
-   Kafka/Flink control.
+2. Kafka Bridge HTTP API and compatibility helpers for the legacy management
+   backend proxy.
+3. `AqpControlPlaneClient` for AQP workload lifecycle operations through the
+   `agentic_quant_platform/aqp_control_plane` `/manage/*` API.
 4. The Flink REST API (job/metric polling, savepoint queries).
 5. Local access profiles for MinIO, MLflow, DataHub/Iceberg, OpenTelemetry,
    Argo pipelines, and vLLM/KServe model serving.
@@ -37,6 +38,7 @@ Extras:
 
 ```python
 from rpi_k8s_sdk import configure_tracing
+from rpi_k8s_sdk.aqp import AqpControlPlaneClient
 from rpi_k8s_sdk.kafka import AvroProducer, AvroConsumer
 from rpi_k8s_sdk.flink import ManagementFlinkClient
 
@@ -57,7 +59,12 @@ with AvroProducer(
         key="AAPL.NASDAQ",
     )
 
-# Flink orchestration via management API
+# AQP workload lifecycle via the AQP control plane
+with AqpControlPlaneClient.from_env() as cp:
+    cp.health()
+    cp.list_deployments(namespace="aqp")
+
+# Legacy Flink orchestration via management API (compatibility only)
 flink = ManagementFlinkClient("http://control.local/api")
 flink.activate("indicator-compute")
 flink.savepoint("indicator-compute")

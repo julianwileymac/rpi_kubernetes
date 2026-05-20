@@ -3,6 +3,9 @@
 from .access import LocalAccessSettings, ServiceRef, load_settings, write_env_file
 from .auth import ManagementAuth
 from .aqp import (
+    AqpControlPlaneClient,
+    AqpControlPlaneError,
+    AqpControlPlaneSettings,
     aqp_session,
     latest_mlflow_run,
     register_model,
@@ -25,6 +28,9 @@ from .tunnels import LocalTunnelManager, PortForwardTunnel, find_free_port
 
 __all__ = [
     "ArgoPipelineClient",
+    "AqpControlPlaneClient",
+    "AqpControlPlaneError",
+    "AqpControlPlaneSettings",
     "DataHubClient",
     "DataHubRecipe",
     "IcebergCatalogConfig",

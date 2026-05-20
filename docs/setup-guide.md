@@ -571,9 +571,9 @@ kubectl get svc -A | grep LoadBalancer
 192.168.1.203  minio.local
 192.168.1.204  jaeger.local
 
-# Ingress hosts (control.local, etc.) use the ingress-nginx LoadBalancer IP
+# Ingress hosts use the ingress-nginx LoadBalancer IP
 kubectl -n ingress get svc ingress-nginx-controller
-192.168.1.205  control.local argo.local dagster.local yatai.local flink.local
+192.168.1.205  argo.local dagster.local yatai.local flink.local
 ```
 
 ## Step 10: Access Services
@@ -595,7 +595,6 @@ kubectl -n ingress get svc ingress-nginx-controller
 | MinIO | http://minio.local:9001 | minioadmin / minioadmin123 |
 | Flink Web UI | http://flink.local | - |
 | Kafka (internal) | trading-kafka-kafka-bootstrap.data-services:9092 | - |
-| Control Panel | http://control.local | - |
 
 ### 10.1 Verify Argo and Dagster Telemetry
 
@@ -672,22 +671,17 @@ kubectl create job -n data-services --from=cronjob/datahub-metadata-bridge datah
 kubectl logs -n data-services job/datahub-metadata-bridge-manual
 ```
 
-Control panel access options:
-- Ingress: `http://control.local` (hosts entry required)
-- LoadBalancer: `http://<management-ui-external-ip>:9280`
-- NodePort: `http://<node-ip>:31280`
-
-## Step 11: Deploy Management Control Panel
+## Step 11: Legacy Management Control Panel (Rollback Only)
 
 ```bash
-# Apply management API/UI manifests
-# (legacy surface only; new control-plane/client lives in agentic_quant_platform)
-kubectl apply -f kubernetes/base-services/management/frontend.yaml
+# Apply legacy management API/UI manifests only for rollback.
+# New control-plane/client surfaces live in agentic_quant_platform.
+kubectl apply -k kubernetes/legacy-management/
 
 # If you previously deployed legacy selector labels and apply fails,
 # recreate only the UI deployment and re-apply:
 kubectl delete deployment -n management management-ui --ignore-not-found
-kubectl apply -f kubernetes/base-services/management/frontend.yaml
+kubectl apply -k kubernetes/legacy-management/
 
 # Verify rollout
 kubectl rollout status deployment/management-ui -n management --timeout=180s
@@ -696,6 +690,12 @@ kubectl rollout status deployment/management-ui -n management --timeout=180s
 This step is retained for rollback compatibility. For current AQP operator
 surfaces, deploy `aqp-client` + `aqp-cp` via
 [operations/kubernetes-deploy.md](operations/kubernetes-deploy.md).
+
+Legacy control panel access options after applying the rollback overlay:
+
+- Ingress: `http://control.local` (hosts entry required)
+- LoadBalancer: `http://<management-ui-external-ip>:9280`
+- NodePort: `http://<node-ip>:31280`
 
 ## Troubleshooting
 

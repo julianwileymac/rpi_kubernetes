@@ -41,7 +41,8 @@ resources:
   - base-services/mlflow/
   - base-services/jupyterhub/
   - base-services/dask-ray/
-  - base-services/management/
+  # Legacy management is rollback-only and no longer part of default cluster
+  # bootstrap. Apply kubernetes/legacy-management explicitly if needed.
   - base-services/chromadb/
   - base-services/ragflow/
   - base-services/polaris/
@@ -64,6 +65,8 @@ resources:
 
   # Internet edge — Cloudflare Tunnel for outbound public exposure
   - base-services/cloudflared/
+  # Internet edge — AQP.FUND Cloudflare Tunnel (managed config, separate from portal)
+  - base-services/cloudflared-aqp/
 
   # Observability stack
   - observability/otel-collector/

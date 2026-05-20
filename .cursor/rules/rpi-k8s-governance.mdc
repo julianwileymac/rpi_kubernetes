@@ -23,9 +23,14 @@ infrastructure operations.
 1. `management/backend` and `management/frontend` are deprecated surfaces.
    Do not add new feature work there.
 2. New AQP control-plane and operator UI features belong in
-   `agentic_quant_platform`.
-3. Do not document `kubectl apply -k kubernetes/` as universally sufficient
+   `agentic_quant_platform` (see `docs/aqp-monorepo-paths.md`).
+3. Default cluster bootstrap must not include
+   `kubernetes/base-services/management`; use
+   `kubernetes/legacy-management` only for rollback.
+4. AQP workload controllers belong in
+   `agentic_quant_platform/aqp_control_plane`.
+5. Do not document `kubectl apply -k kubernetes/` as universally sufficient
    when CRD/operator install order is required.
-4. Incident-specific notes belong under `docs/archive/`, not as canonical
+6. Incident-specific notes belong under `docs/archive/`, not as canonical
    top-level docs.
-5. Keep path references real and current; remove links to missing files.
+7. Keep path references real and current; remove links to missing files.

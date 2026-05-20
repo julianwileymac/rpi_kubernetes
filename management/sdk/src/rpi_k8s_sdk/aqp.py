@@ -200,6 +200,59 @@ class AqpControlPlaneClient:
             )
         )
 
+    def restart_deployment(
+        self, service_id: str, *, namespace: str | None = None
+    ) -> dict[str, Any]:
+        params = {"namespace": namespace} if namespace else None
+        return self._envelope(
+            self._http.post(
+                f"/manage/deployments/{service_id}/restart",
+                params=params,
+                headers={"X-Request-Id": self._request_id()},
+            )
+        )
+
+    def exec_deployment(
+        self,
+        service_id: str,
+        command: list[str],
+        *,
+        namespace: str | None = None,
+        container: str | None = None,
+        timeout_seconds: int = 60,
+        stdin_b64: str | None = None,
+    ) -> dict[str, Any]:
+        return self._envelope(
+            self._http.post(
+                f"/manage/deployments/{service_id}/exec",
+                json={
+                    "command": command,
+                    "namespace": namespace,
+                    "container": container,
+                    "timeout_seconds": timeout_seconds,
+                    "stdin_b64": stdin_b64,
+                },
+                headers={"X-Request-Id": self._request_id()},
+            )
+        )
+
+    def deployment_logs(
+        self,
+        service_id: str,
+        *,
+        namespace: str | None = None,
+        container: str | None = None,
+        tail: int = 200,
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {"tail": int(tail)}
+        if namespace:
+            params["namespace"] = namespace
+        if container:
+            params["container"] = container
+        return self._envelope(
+            self._http.get(f"/manage/deployments/{service_id}/logs", params=params)
+        )
+
     def delete_deployment(
         self, service_id: str, *, namespace: str | None = None
     ) -> dict[str, Any]:

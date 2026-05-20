@@ -56,8 +56,8 @@ using `spec.build`:
 
 After the build finishes, connectors defined under
 [`connectors/`](../kubernetes/base-services/kafka/connectors/) are
-reconciled by the operator. They start in `paused` state; flip to
-`running` via the API:
+reconciled by the operator. They start in `paused` state; prefer direct
+`kubectl` patches. The legacy management API example is rollback-only:
 
 ```bash
 curl -XPATCH \
@@ -66,7 +66,7 @@ curl -XPATCH \
   http://control.local/api/kafka/connectors/s3-sink-features-indicators/state
 ```
 
-or directly with `kubectl`:
+Preferred direct `kubectl` path:
 
 ```bash
 kubectl patch kafkaconnector s3-sink-features-indicators -n data-services \

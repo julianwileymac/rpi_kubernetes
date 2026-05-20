@@ -1,0 +1,22 @@
+---
+description: Code ownership and search boundaries for rpi_kubernetes.
+globs:
+  - "**/*"
+alwaysApply: false
+---
+
+# rpi_kubernetes Code Index
+
+- This repo owns cluster bootstrap, Kubernetes platform services, streaming
+  samples, and the local cluster SDK.
+- AQP workload manifests live in
+  `agentic_quant_platform/deployments/kubernetes`.
+- AQP workload controllers live in
+  `agentic_quant_platform/aqp_control_plane`.
+- Search `docs/code-index.md` before moving code across repo boundaries.
+- Keep `rpi_k8s_sdk.AqpControlPlaneClient` as the supported bridge to AQP
+  workload control.
+
+
+
+AQP path contract: `docs/aqp-monorepo-paths.md`.

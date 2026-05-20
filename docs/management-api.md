@@ -1,5 +1,10 @@
 # Management API Reference
 
+> **Status: deprecated / rollback only.** The legacy management API is not
+> deployed by the default root kustomization. New AQP workload control belongs
+> in `agentic_quant_platform/aqp_control_plane` and should be reached through
+> `rpi_k8s_sdk.AqpControlPlaneClient` or `aqp cp ...`.
+
 The FastAPI backend under [`management/backend/`](../management/backend/)
 exposes the cluster control plane. The Kafka and Flink endpoints documented
 here were added alongside the streaming platform expansion; see the other

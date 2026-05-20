@@ -1,0 +1,721 @@
+{
+  "scannedPath": "C:\\Users\\Julian Wiley\\Documents\\GitHub\\rpi_kubernetes",
+  "baseScore": 72,
+  "acceleratorBonus": 4,
+  "overallScore": 72,
+  "maturity": "Standardized",
+  "classification": {
+    "kind": "monorepo",
+    "isMonorepo": true,
+    "hasRuntimeEntrypoint": true,
+    "reasons": [
+      "workspace or nested manifest signals found"
+    ]
+  },
+  "ecosystems": [
+    "node",
+    "python",
+    "jvm"
+  ],
+  "warnings": [
+    "Skipped large file content for inspiration/flink/flink-runtime-web/web-dashboard/package-lock.json.",
+    "Skipped large file content for inspiration/flink/flink-table/flink-table-planner/src/test/resources/org/apache/flink/table/planner/plan/optimize/program/DynamicPartitionPruningProgramTest.xml.",
+    "Skipped large file content for inspiration/flink/flink-table/flink-table-planner/src/test/resources/org/apache/flink/table/planner/plan/stream/sql/agg/WindowAggregateTest.xml.",
+    "Read a bounded subset of source files (400) to keep scans predictable."
+  ],
+  "pillars": [
+    {
+      "id": "styleValidation",
+      "name": "Style & Validation",
+      "score": 59,
+      "awardedWeight": 9.5,
+      "applicableWeight": 16,
+      "checks": [
+        {
+          "id": "formatterConfigured",
+          "pillar": "styleValidation",
+          "name": "Formatter configured",
+          "weight": 3,
+          "remediation": "Add a formatter and expose it through a repo-root command, task target, or CI config.",
+          "status": "partial",
+          "awardedWeight": 1.5,
+          "evidence": [
+            "inspiration/flink/flink-runtime-web/web-dashboard/.prettierrc"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "id": "linterConfigured",
+          "pillar": "styleValidation",
+          "name": "Linter configured",
+          "weight": 4,
+          "remediation": "Add a linter and wire it into local validation or CI.",
+          "status": "partial",
+          "awardedWeight": 2,
+          "evidence": [
+            "inspiration/flink/flink-runtime-web/web-dashboard/.eslintrc.js"
+          ],
+          "confidence": 0.7
+        },
+        {
+          "id": "typeOrStaticCheckConfigured",
+          "pillar": "styleValidation",
+          "name": "Type, static, or language tooling configured",
+          "weight": 4,
+          "remediation": "Add a type checker, static analyzer, or repo-local language tooling config and expose it through a command, task target, or CI config.",
+          "status": "partial",
+          "awardedWeight": 2,
+          "evidence": [
+            "flink-jobs-java/build.gradle",
+            "flink-jobs-java/common/build.gradle",
+            "flink-jobs-java/indicators-cycle/build.gradle"
+          ],
+          "confidence": 0.65
+        },
+        {
+          "id": "strictModeEnabled",
+          "pillar": "styleValidation",
+          "name": "Strict mode enabled",
+          "weight": 3,
+          "remediation": "Turn on strict or hardened analysis settings where the ecosystem supports them.",
+          "status": "pass",
+          "awardedWeight": 3,
+          "evidence": [
+            "flink-jobs-java/build.gradle",
+            "flink-jobs-java/common/build.gradle",
+            "flink-jobs-java/indicators-cycle/build.gradle"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "fastFeedbackHooks",
+          "pillar": "styleValidation",
+          "name": "Fast local feedback hooks",
+          "weight": 2,
+          "remediation": "Use pre-commit or pre-push hooks to run validation before CI.",
+          "status": "partial",
+          "awardedWeight": 1,
+          "evidence": [
+            "hook tooling mentioned in docs"
+          ],
+          "confidence": 0.55
+        }
+      ]
+    },
+    {
+      "id": "buildTasks",
+      "name": "Build & Tasks",
+      "score": 79,
+      "awardedWeight": 13.5,
+      "applicableWeight": 17,
+      "checks": [
+        {
+          "id": "gitRepoPresent",
+          "pillar": "buildTasks",
+          "name": "Git repo present",
+          "weight": 2,
+          "remediation": "Scan a real git checkout, or initialize the repository with git so agents can rely on branch, diff, and review workflows.",
+          "status": "pass",
+          "awardedWeight": 2,
+          "evidence": [
+            ".git"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "installPathDeclared",
+          "pillar": "buildTasks",
+          "name": "Install path declared",
+          "weight": 3,
+          "remediation": "Document or expose a clear install/bootstrap command at the repo root.",
+          "status": "pass",
+          "awardedWeight": 3,
+          "evidence": [
+            "README"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "id": "buildOrPackageCommand",
+          "pillar": "buildTasks",
+          "name": "Build or package command",
+          "weight": 3,
+          "remediation": "Add a repo-root build or package command, task target, or equivalent build entrypoint when the repo requires one.",
+          "status": "pass",
+          "awardedWeight": 3,
+          "evidence": [
+            "inspiration/flink/flink-python/docs/Makefile"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "testCommandDiscoverable",
+          "pillar": "buildTasks",
+          "name": "Test command discoverable",
+          "weight": 3,
+          "remediation": "Expose a repo-root test command or task target that works for the full codebase.",
+          "status": "partial",
+          "awardedWeight": 1.5,
+          "evidence": [
+            "bootstrap/scripts/test_ssh.py"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "validateCommandDiscoverable",
+          "pillar": "buildTasks",
+          "name": "Validation command discoverable",
+          "weight": 2,
+          "remediation": "Provide a repo-root command or task target for lint, type, or format validation.",
+          "status": "fail",
+          "awardedWeight": 0,
+          "evidence": [
+            "no clear validation command found"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "ciWorkflowPresent",
+          "pillar": "buildTasks",
+          "name": "CI workflow present",
+          "weight": 4,
+          "remediation": "Add CI config that runs validation and tests from the repository itself.",
+          "status": "pass",
+          "awardedWeight": 4,
+          "evidence": [
+            "inspiration/flink/azure-pipelines.yml",
+            "inspiration/flink/docs/static/downloads/docker-compose.yml"
+          ],
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "id": "testing",
+      "name": "Testing",
+      "score": 84,
+      "awardedWeight": 13.5,
+      "applicableWeight": 16,
+      "checks": [
+        {
+          "id": "testFrameworkConfigured",
+          "pillar": "testing",
+          "name": "Test framework configured",
+          "weight": 4,
+          "remediation": "Configure a test framework and make it visible from repo tooling.",
+          "status": "pass",
+          "awardedWeight": 4,
+          "evidence": [
+            "bootstrap/scripts/test_ssh.py"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "testFilesPresent",
+          "pillar": "testing",
+          "name": "Test files present",
+          "weight": 5,
+          "remediation": "Add representative tests that cover core source areas.",
+          "status": "pass",
+          "awardedWeight": 5,
+          "evidence": [
+            "bootstrap/scripts/test_ssh.py",
+            "flink-jobs-java/common/src/test/java/io/rpi/flink/indicators/common/SymbolBufferStateTest.java",
+            "inspiration/flink-training-master/common/src/test/java/org/apache/flink/training/exercises/testing/ComposedFilterFunction.java"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "testsRunnableFromRepo",
+          "pillar": "testing",
+          "name": "Tests runnable from repo root",
+          "weight": 3,
+          "remediation": "Make the full test suite runnable from the repository root.",
+          "status": "partial",
+          "awardedWeight": 1.5,
+          "evidence": [
+            "tests exist but repo-root command is unclear"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "coverageSignalPresent",
+          "pillar": "testing",
+          "name": "Coverage signal present",
+          "weight": 1,
+          "remediation": "Optional signal for agents and reviewers. Add coverage tooling, thresholds, or published reports if you want visible test-gap reporting.",
+          "status": "fail",
+          "awardedWeight": 0,
+          "evidence": [
+            "no coverage signal found"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "integrationCoverageWhenRelevant",
+          "pillar": "testing",
+          "name": "Integration coverage where relevant",
+          "weight": 3,
+          "remediation": "Add integration, smoke, or end-to-end tests for runnable applications and services.",
+          "status": "pass",
+          "awardedWeight": 3,
+          "evidence": [
+            "inspiration/flink-training-master/long-ride-alerts/src/test/java/org/apache/flink/training/exercises/longrides/LongRidesIntegrationTest.java",
+            "inspiration/flink-training-master/long-ride-alerts/src/test/scala/org/apache/flink/training/exercises/longrides/scala/LongRidesIntegrationTest.scala",
+            "inspiration/flink-training-master/ride-cleansing/src/test/java/org/apache/flink/training/exercises/ridecleansing/RideCleansingIntegrationTest.java"
+          ],
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "id": "documentation",
+      "name": "Documentation",
+      "score": 93,
+      "awardedWeight": 13,
+      "applicableWeight": 14,
+      "checks": [
+        {
+          "id": "readmePresent",
+          "pillar": "documentation",
+          "name": "README present",
+          "weight": 2,
+          "remediation": "Add a root README that explains what the repository does.",
+          "status": "pass",
+          "awardedWeight": 2,
+          "evidence": [
+            "README"
+          ],
+          "confidence": 1
+        },
+        {
+          "id": "setupInstructions",
+          "pillar": "documentation",
+          "name": "Setup instructions",
+          "weight": 4,
+          "remediation": "Document prerequisites and setup steps clearly enough for a newcomer or agent to follow.",
+          "status": "pass",
+          "awardedWeight": 4,
+          "evidence": [
+            "README"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "id": "runAndValidateInstructions",
+          "pillar": "documentation",
+          "name": "Run and validate instructions",
+          "weight": 4,
+          "remediation": "Explain how to run the project and how to test or validate changes.",
+          "status": "pass",
+          "awardedWeight": 4,
+          "evidence": [
+            "README"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "id": "envVariablesDocumented",
+          "pillar": "documentation",
+          "name": "Environment variables documented",
+          "weight": 2,
+          "remediation": "Document required environment variables and what each one is used for.",
+          "status": "partial",
+          "awardedWeight": 1,
+          "evidence": [
+            "README"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "contributionOrAgentGuidance",
+          "pillar": "documentation",
+          "name": "Agent workflow guidance",
+          "weight": 2,
+          "remediation": "Add AGENTS.md or equivalent agent-facing workflow guidance.",
+          "status": "pass",
+          "awardedWeight": 2,
+          "evidence": [
+            "AGENTS.md"
+          ],
+          "confidence": 0.95
+        }
+      ]
+    },
+    {
+      "id": "devEnvironment",
+      "name": "Dev Environment",
+      "score": 67,
+      "awardedWeight": 6,
+      "applicableWeight": 9,
+      "checks": [
+        {
+          "id": "sampleEnvProvided",
+          "pillar": "devEnvironment",
+          "name": "Sample environment file provided",
+          "weight": 3,
+          "remediation": "Add a sample env file when the project depends on environment variables.",
+          "status": "partial",
+          "awardedWeight": 1.5,
+          "evidence": [
+            "README"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "toolchainDeclared",
+          "pillar": "devEnvironment",
+          "name": "Toolchain declared",
+          "weight": 3,
+          "remediation": "Pin or declare the runtime or language version required to work in the repo.",
+          "status": "pass",
+          "awardedWeight": 3,
+          "evidence": [],
+          "confidence": 0.85
+        },
+        {
+          "id": "oneCommandStartupPath",
+          "pillar": "devEnvironment",
+          "name": "One-command startup path",
+          "weight": 3,
+          "remediation": "Expose a clear local start or dev command for the main runnable surface.",
+          "status": "partial",
+          "awardedWeight": 1.5,
+          "evidence": [
+            "README"
+          ],
+          "confidence": 0.65
+        }
+      ]
+    },
+    {
+      "id": "codeQuality",
+      "name": "Code Quality",
+      "score": 85,
+      "awardedWeight": 8.5,
+      "applicableWeight": 10,
+      "checks": [
+        {
+          "id": "clearProjectLayout",
+          "pillar": "codeQuality",
+          "name": "Clear project layout",
+          "weight": 3,
+          "remediation": "Separate source, tests, and config into recognizable locations.",
+          "status": "partial",
+          "awardedWeight": 1.5,
+          "evidence": [
+            "bootstrap/scripts/analyze-traces.py"
+          ],
+          "confidence": 0.55
+        },
+        {
+          "id": "generatedAndVendorSeparated",
+          "pillar": "codeQuality",
+          "name": "Generated and vendor code separated",
+          "weight": 2,
+          "remediation": "Keep generated, vendored, and build output out of primary source paths.",
+          "status": "pass",
+          "awardedWeight": 2,
+          "evidence": [
+            "bootstrap/scripts/build-flink-jobs-java.sh",
+            "bootstrap/scripts/build-flink-jobs.sh",
+            "bootstrap/scripts/build-management-no-ssh.ps1"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "id": "dependencyLockingPresent",
+          "pillar": "codeQuality",
+          "name": "Dependency locking present",
+          "weight": 2,
+          "remediation": "Check in lockfiles or the ecosystem equivalent for dependency pinning.",
+          "status": "pass",
+          "awardedWeight": 2,
+          "evidence": [
+            "inspiration/flink/flink-python/docs/uv.lock",
+            "inspiration/flink/flink-runtime-web/web-dashboard/package-lock.json",
+            "management/frontend/package-lock.json"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "staticAnalysisDepth",
+          "pillar": "codeQuality",
+          "name": "Static analysis depth",
+          "weight": 3,
+          "remediation": "Use project-specific lint or analysis rules rather than only bare defaults.",
+          "status": "pass",
+          "awardedWeight": 3,
+          "evidence": [
+            "inspiration/flink/flink-runtime-web/web-dashboard/.eslintrc.js"
+          ],
+          "confidence": 0.8
+        }
+      ]
+    },
+    {
+      "id": "observability",
+      "name": "Observability",
+      "score": 33,
+      "awardedWeight": 2,
+      "applicableWeight": 6,
+      "checks": [
+        {
+          "id": "loggingSignal",
+          "pillar": "observability",
+          "name": "Logging signal",
+          "weight": 2,
+          "remediation": "Adopt a centralized or structured logging approach for runtime code.",
+          "status": "partial",
+          "awardedWeight": 1,
+          "evidence": [
+            "ad hoc logging found"
+          ],
+          "confidence": 0.55
+        },
+        {
+          "id": "healthOrDebugSignal",
+          "pillar": "observability",
+          "name": "Health or debug signal",
+          "weight": 2,
+          "remediation": "Expose health checks, diagnostics, or clear debugging workflows for runnable services.",
+          "status": "partial",
+          "awardedWeight": 1,
+          "evidence": [
+            "debugging guidance found in docs"
+          ],
+          "confidence": 0.5
+        },
+        {
+          "id": "metricsTracingOrErrorReporting",
+          "pillar": "observability",
+          "name": "Metrics, tracing, or error reporting",
+          "weight": 2,
+          "remediation": "Add operational signals such as metrics, tracing, or error reporting.",
+          "status": "fail",
+          "awardedWeight": 0,
+          "evidence": [
+            "no metrics, tracing, or error reporting signal found"
+          ],
+          "confidence": 0.75
+        }
+      ]
+    },
+    {
+      "id": "securityGovernance",
+      "name": "Security & Governance",
+      "score": 45,
+      "awardedWeight": 4.5,
+      "applicableWeight": 10,
+      "checks": [
+        {
+          "id": "ownershipSignal",
+          "pillar": "securityGovernance",
+          "name": "Ownership signal",
+          "weight": 2,
+          "remediation": "Add CODEOWNERS or another explicit ownership map.",
+          "status": "partial",
+          "awardedWeight": 1,
+          "evidence": [
+            "README"
+          ],
+          "confidence": 0.55
+        },
+        {
+          "id": "licensePresent",
+          "pillar": "securityGovernance",
+          "name": "License present",
+          "weight": 1,
+          "remediation": "Add a license file or explicit package license metadata.",
+          "status": "pass",
+          "awardedWeight": 1,
+          "evidence": [
+            "LICENSE"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "securityScanConfigured",
+          "pillar": "securityGovernance",
+          "name": "Security scan configured",
+          "weight": 3,
+          "remediation": "Add dependency audit or security scanning in local tooling, task targets, or CI.",
+          "status": "partial",
+          "awardedWeight": 1.5,
+          "evidence": [
+            "security tooling signal found"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "secretHygiene",
+          "pillar": "securityGovernance",
+          "name": "Secret hygiene",
+          "weight": 2,
+          "remediation": "Add sample env files plus secret scanning or secret-ignore policy.",
+          "status": "fail",
+          "awardedWeight": 0,
+          "evidence": [
+            "no secret hygiene signal found"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "id": "ciSecurityStep",
+          "pillar": "securityGovernance",
+          "name": "CI security step",
+          "weight": 2,
+          "remediation": "Include at least one security-oriented job or step in CI.",
+          "status": "partial",
+          "awardedWeight": 1,
+          "evidence": [
+            "security tooling signal found"
+          ],
+          "confidence": 0.6
+        }
+      ]
+    }
+  ],
+  "accelerators": {
+    "bonusPoints": 4,
+    "maxBonusPoints": 8,
+    "checks": [
+      {
+        "id": "agentGuidanceDocs",
+        "name": "Agent guidance docs",
+        "maxPoints": 2,
+        "remediation": "Add AGENTS.md with concise, repo-specific guidance for autonomous work.",
+        "status": "pass",
+        "awardedPoints": 2,
+        "evidence": [
+          "AGENTS.md (198 words)"
+        ],
+        "confidence": 0.95
+      },
+      {
+        "id": "cursorToolingConfigured",
+        "name": "Cursor project tooling",
+        "maxPoints": 2,
+        "remediation": "Add project-specific .cursor rules, skills, or agents so Cursor has reusable repo context.",
+        "status": "pass",
+        "awardedPoints": 2,
+        "evidence": [
+          ".cursor/skills/",
+          ".cursor/agents/",
+          ".cursor/rules/"
+        ],
+        "confidence": 0.9
+      },
+      {
+        "id": "cursorMcpConfigured",
+        "name": "Cursor MCP setup",
+        "maxPoints": 2,
+        "remediation": "Add .cursor/mcp.json with at least one working MCP server for repo-specific workflows.",
+        "status": "fail",
+        "awardedPoints": 0,
+        "evidence": [
+          "no .cursor/mcp.json found"
+        ],
+        "confidence": 0.9
+      },
+      {
+        "id": "claudeToolingConfigured",
+        "name": "Claude project tooling",
+        "maxPoints": 2,
+        "remediation": "Add .claude agents or commands so Claude-based workflows have project context.",
+        "status": "not_applicable",
+        "awardedPoints": 0,
+        "evidence": [],
+        "confidence": 0.85
+      },
+      {
+        "id": "dependencyMcpAlignment",
+        "name": "Dependency-to-MCP alignment",
+        "maxPoints": 2,
+        "remediation": "Add MCP servers that match the repo's major external surfaces, such as database or browser tooling.",
+        "status": "fail",
+        "awardedPoints": 0,
+        "evidence": [
+          "database dependency has no MCP config",
+          "observability dependency has no MCP config",
+          "cloud/aws dependency has no MCP config"
+        ],
+        "confidence": 0.75
+      }
+    ],
+    "opportunities": [
+      {
+        "checkId": "cursorMcpConfigured",
+        "title": "Cursor MCP setup",
+        "remediation": "Add .cursor/mcp.json with at least one working MCP server for repo-specific workflows.",
+        "maxPoints": 2,
+        "evidence": [
+          "no .cursor/mcp.json found"
+        ]
+      },
+      {
+        "checkId": "dependencyMcpAlignment",
+        "title": "Dependency-to-MCP alignment",
+        "remediation": "Add MCP servers that match the repo's major external surfaces, such as database or browser tooling.",
+        "maxPoints": 2,
+        "evidence": [
+          "database dependency has no MCP config",
+          "observability dependency has no MCP config",
+          "cloud/aws dependency has no MCP config"
+        ]
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "pillar": "Observability",
+      "checkId": "metricsTracingOrErrorReporting",
+      "title": "Metrics, tracing, or error reporting",
+      "remediation": "Add operational signals such as metrics, tracing, or error reporting.",
+      "weight": 2,
+      "evidence": [
+        "no metrics, tracing, or error reporting signal found"
+      ]
+    },
+    {
+      "pillar": "Security & Governance",
+      "checkId": "secretHygiene",
+      "title": "Secret hygiene",
+      "remediation": "Add sample env files plus secret scanning or secret-ignore policy.",
+      "weight": 2,
+      "evidence": [
+        "no secret hygiene signal found"
+      ]
+    },
+    {
+      "pillar": "Build & Tasks",
+      "checkId": "validateCommandDiscoverable",
+      "title": "Validation command discoverable",
+      "remediation": "Provide a repo-root command or task target for lint, type, or format validation.",
+      "weight": 2,
+      "evidence": [
+        "no clear validation command found"
+      ]
+    },
+    {
+      "pillar": "Testing",
+      "checkId": "coverageSignalPresent",
+      "title": "Coverage signal present",
+      "remediation": "Optional signal for agents and reviewers. Add coverage tooling, thresholds, or published reports if you want visible test-gap reporting.",
+      "weight": 1,
+      "evidence": [
+        "no coverage signal found"
+      ]
+    },
+    {
+      "pillar": "Security & Governance",
+      "checkId": "ciSecurityStep",
+      "title": "CI security step",
+      "remediation": "Include at least one security-oriented job or step in CI.",
+      "weight": 2,
+      "evidence": [
+        "security tooling signal found"
+      ]
+    }
+  ]
+}

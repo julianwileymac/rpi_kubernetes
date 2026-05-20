@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudflared-aqp-metrics
+  namespace: edge
+  labels:
+    app: cloudflared-aqp
+    app.kubernetes.io/name: cloudflared-aqp
+    app.kubernetes.io/component: tunnel
+    app.kubernetes.io/part-of: edge
+spec:
+  type: ClusterIP
+  selector:
+    app: cloudflared-aqp
+  ports:
+    - name: metrics
+      port: 2000
+      targetPort: metrics
+      protocol: TCP

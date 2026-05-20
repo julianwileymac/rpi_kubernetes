@@ -647,7 +647,7 @@ bash bootstrap/scripts/build-flink-jobs-java.sh --push
 kubectl patch flinksessionjob indicator-compute -n flink \
   --type merge -p '{"spec":{"job":{"state":"running"}}}'
 
-# ... or via the management API / Python SDK
+# ... or via the rollback-only legacy management API / Python SDK
 curl -XPOST http://control.local/api/flink/sessionjobs/indicators-momentum/activate
 ```
 

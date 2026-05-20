@@ -364,7 +364,7 @@ kubectl apply -k kubernetes/base-services/flink/jobs-java/
 kubectl patch flinksessionjob indicators-momentum -n flink \
   --type merge -p '{"spec":{"job":{"state":"running"}}}'
 
-# ... or via the management API
+# ... or via the rollback-only legacy management API
 for cat in overlap momentum volume volatility price-transform \
            cycle statistic patterns math-transform math-operator; do
     curl -XPOST "http://control.local/api/flink/sessionjobs/indicators-${cat}/activate"

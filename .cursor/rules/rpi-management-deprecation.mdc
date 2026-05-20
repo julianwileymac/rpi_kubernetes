@@ -1,0 +1,24 @@
+---
+description: Keep deprecated rpi management surfaces rollback-only.
+globs:
+  - "management/**"
+  - "kubernetes/base-services/management/**"
+  - "kubernetes/legacy-management/**"
+alwaysApply: false
+---
+
+# Legacy Management Deprecation
+
+- `management/backend` and `management/frontend` are deprecated rollback
+  surfaces. Do not add features.
+- `kubernetes/base-services/management` is not part of default cluster
+  bootstrap; `kubernetes/legacy-management` is opt-in rollback only.
+- New AQP control-plane routes belong in
+  `agentic_quant_platform/aqp_control_plane`.
+- New operator UI features belong in `agentic_quant_platform/aqp_client`.
+- SDK changes should prefer `AqpControlPlaneClient` for AQP workload
+  lifecycle operations.
+
+
+
+AQP path contract: `docs/aqp-monorepo-paths.md`.

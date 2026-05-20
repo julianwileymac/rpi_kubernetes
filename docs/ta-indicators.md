@@ -75,7 +75,7 @@ kubectl patch flinksessionjob indicators-momentum -n flink \
 # ... repeat per category
 ```
 
-Or use the management API to avoid kubectl:
+Rollback-only legacy management API path:
 
 ```bash
 curl -XPOST http://control.local/api/flink/sessionjobs/indicators-overlap/activate
